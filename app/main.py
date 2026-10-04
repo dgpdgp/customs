@@ -70,7 +70,7 @@ from app.security import (
 )
 from app.services import exporter, validation
 from app.services.parsers import EXCEL_EXTENSIONS, PDF_EXTENSIONS
-from app.services.pipeline import process_job
+from app.services.pipeline import process_job, recover_interrupted_jobs
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -88,6 +88,7 @@ MAX_COMMERCIAL_FILES = 20
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
+    recover_interrupted_jobs()
     yield
 
 

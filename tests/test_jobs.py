@@ -168,3 +168,22 @@ def test_review_page_renders(logged_in, fake_llm):
     page = logged_in.get("/jobs/1")
     assert page.status_code == 200
     assert "diff.js" in page.text and "Задача №1" in page.text
+
+
+def test_jobs_interrupted_by_restart_become_retryable(logged_in, fake_llm):
+    from app.database import SessionLocal
+    from app.models import DeclarationJob
+    from app.services.pipeline import recover_interrupted_jobs
+
+    upload_samples(logged_in)
+    with SessionLocal() as db:  # имитируем задачу, которую оборвал перезапуск сервера
+        job = db.get(DeclarationJob, 1)
+        job.status = "processing"
+        job.options = {**job.options, "lang": "en"}
+        db.commit()
+
+    assert recover_interrupted_jobs() == 1
+    job = _job(logged_in)
+    assert job["status"] == "failed" and "server restart" in job["error_message"]
+    assert logged_in.post("/api/jobs/1/retry").json()["status"] == "processing"
+    assert _job(logged_in)["status"] == "review"

@@ -87,3 +87,18 @@ def test_llm_is_asked_to_write_issues_in_user_language():
     finally:
         i18n.reset_lang(token)
     assert "английском" in text
+
+
+def test_switcher_order_is_ka_en_ru(client):
+    page = client.get("/login").text
+    assert page.index('lang="ka"') < page.index('lang="en"', page.index("lang-switch")) < page.index(
+        'lang="ru"', page.index("lang-switch"))
+
+
+def test_default_language_is_configurable(client, monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "default_language", "ka")
+    assert '<html lang="ka">' in client.get("/login").text
+    client.cookies.set("lang", "ru")  # явный выбор пользователя важнее настройки
+    assert '<html lang="ru">' in client.get("/login").text

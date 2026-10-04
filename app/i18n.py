@@ -13,17 +13,26 @@
 
 from contextvars import ContextVar, Token
 
-LANGUAGES = {"ru": "Русский", "en": "English", "ka": "ქართული"}
-LANGUAGE_SHORT = {"ru": "RU", "en": "EN", "ka": "KA"}
-DEFAULT_LANG = "ru"
+# Порядок словаря = порядок кнопок переключателя в шапке
+LANGUAGES = {"ka": "ქართული", "en": "English", "ru": "Русский"}
+LANGUAGE_SHORT = {"ka": "KA", "en": "EN", "ru": "RU"}
+DEFAULT_LANG = "ru"  # запасной язык для текстов; язык сайта по умолчанию — настройка DEFAULT_LANGUAGE
 COOKIE_NAME = "lang"
 
 _current: ContextVar[str] = ContextVar("lang", default=DEFAULT_LANG)
 
 
-def normalize(code: str | None) -> str:
-    code = (code or "").strip().lower()[:2]
+def default_language() -> str:
+    from app.config import get_settings  # локальный импорт: config не должен зависеть от i18n
+
+    code = get_settings().default_language
     return code if code in LANGUAGES else DEFAULT_LANG
+
+
+def normalize(code: str | None) -> str:
+    """Код языка из cookie/настроек; неизвестный или пустой — язык сайта по умолчанию."""
+    code = (code or "").strip().lower()[:2]
+    return code if code in LANGUAGES else default_language()
 
 
 def get_lang() -> str:
@@ -318,6 +327,9 @@ _RAW: dict[str, tuple[str, str, str]] = {
     "export.unsupported": ("Шаблоны формата {ext} не поддерживаются (нужен .xml, .txt, .csv или .xlsx)",
                            "{ext} templates are not supported (use .xml, .txt, .csv or .xlsx)",
                            "{ext} ფორმატის შაბლონები მხარდაჭერილი არ არის (საჭიროა .xml, .txt, .csv ან .xlsx)"),
+    "pipe.interrupted": ("Обработка прервана перезапуском сервера. Нажмите «Повторить обработку».",
+                         "Processing was interrupted by a server restart. Click “Retry processing”.",
+                         "დამუშავება შეწყდა სერვერის გადატვირთვის გამო. დააჭირეთ „დამუშავების გამეორებას“."),
     "pipe.internal": ("Внутренняя ошибка обработки. Подробности в логе сервера.",
                       "Internal processing error. Details are in the server log.",
                       "დამუშავების შიდა შეცდომა. დეტალები სერვერის ჟურნალშია."),

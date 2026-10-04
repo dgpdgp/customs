@@ -28,6 +28,22 @@ def _parse(job: DeclarationJob, role: str) -> list[ParsedDocument]:
     return [parse_file(Path(f["stored_path"]), f["original_name"]) for f in job.file_by_role(role)]
 
 
+def recover_interrupted_jobs() -> int:
+    """Вызывается при старте приложения. Фоновые задачи выполняются в процессе веб-сервера,
+    поэтому после перезапуска задача в статусе «обработка» уже никем не выполняется:
+    переводим её в «ошибку», чтобы пользователь мог нажать «Повторить обработку»."""
+    with SessionLocal() as db:
+        jobs = db.query(DeclarationJob).filter(DeclarationJob.status == JobStatus.PROCESSING).all()
+        for job in jobs:
+            job.status = JobStatus.FAILED
+            job.error_message = t("pipe.interrupted", lang=job.options.get("lang"))
+            _log(db, job, "error", status="error", message="interrupted by server restart")
+        db.commit()
+    if jobs:
+        logger.warning("Прерванных перезапуском задач переведено в «ошибку»: %s", len(jobs))
+    return len(jobs)
+
+
 def process_job(job_id: int) -> None:
     """Запускается через BackgroundTasks; открывает собственную сессию БД."""
     settings = get_settings()

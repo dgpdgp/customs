@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     upload_dir: Path = BASE_DIR / "data" / "uploads"
     max_upload_mb: int = 25
 
+    # --- Интерфейс ---
+    # Язык сайта по умолчанию (пока пользователь не выбрал другой): ru | en | ka
+    default_language: str = "ru"
+
     # --- Выбор провайдера LLM ---
     # anthropic — Claude (основной, проверенный вариант);
     # openai    — OpenAI или любой сервис с OpenAI-совместимым API
