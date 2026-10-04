@@ -12,6 +12,7 @@ HTML-страницы (Jinja2 + Tailwind) и JSON API работают пове�
              POST /api/jobs/{id}/approve  /api/jobs/{id}/retry
 """
 
+import contextlib
 import json
 import logging
 import shutil
@@ -68,7 +69,7 @@ from app.security import (
     require_user_page,
     revoke_session,
 )
-from app.services import exporter, validation
+from app.services import asycuda, exporter, validation
 from app.services.parsers import EXCEL_EXTENSIONS, PDF_EXTENSIONS
 from app.services.pipeline import process_job, recover_interrupted_jobs
 from app.web import templates
@@ -421,32 +422,63 @@ def upload_documents(
     return RedirectResponse(f"/jobs/{job.id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
+def _export_sources(job: DeclarationJob) -> tuple[Path | None, list[Path]]:
+    template = job.file_by_role("template")
+    return (Path(template[0]["stored_path"]) if template else None,
+            [Path(f["stored_path"]) for f in job.file_by_role("reference")])
+
+
+def _asycuda_base(job: DeclarationJob) -> asycuda.Base | None:
+    """Файл ASYCUDA, на основе которого будет собран результат (или None — экспорт по шаблону)."""
+    template_path, reference_paths = _export_sources(job)
+    try:
+        return asycuda.choose_base(template_path, reference_paths)
+    except asycuda.AsycudaError:
+        return None
+
+
 @app.get("/jobs/{job_id}", response_class=HTMLResponse, include_in_schema=False)
 def review_page(request: Request, job_id: int, db: DbSession, user: PageUser):
     job = _get_job(db, user, job_id)
-    return templates.TemplateResponse(request, "review.html", {"user": user, "job": job})
+    base = _asycuda_base(job)
+    context = {"user": user, "job": job, "asycuda": None}
+    if base is not None:
+        with contextlib.suppress(asycuda.AsycudaError):
+            context["asycuda"] = {"rate": asycuda.base_rate(base)}
+    return templates.TemplateResponse(request, "review.html", context)
 
 
 @app.get("/jobs/{job_id}/export", include_in_schema=False)
-def export_file(job_id: int, db: DbSession, user: PageUser) -> Response:
-    """Подставляет утверждённые данные в шаблон пользователя и отдаёт файл."""
+def export_file(job_id: int, db: DbSession, user: PageUser, rate: str | None = None) -> Response:
+    """Подставляет утверждённые данные в шаблон пользователя и отдаёт файл.
+
+    Если шаблон (или, без шаблона, эталон) — XML, выгруженный из ASYCUDA, результат собирается
+    на его основе в том же формате (app/services/asycuda.py); rate — курс валюты для этого режима.
+    """
     job = _get_job(db, user, job_id)
     if job.status not in (JobStatus.APPROVED, JobStatus.EXPORTED) or job.approved_data is None:
         raise HTTPException(status.HTTP_409_CONFLICT, t("job.approve_first"))
 
-    template = job.file_by_role("template")
-    template_path = Path(template[0]["stored_path"]) if template else None
+    approved = DeclarationData.model_validate(job.approved_data)
+    template_path, reference_paths = _export_sources(job)
+    notes: list[str] = []
     try:
-        content, filename, media_type = exporter.render_export(
-            DeclarationData.model_validate(job.approved_data), template_path, f"declaration_{job.id}"
-        )
-    except exporter.TemplateRenderError as exc:
+        base = asycuda.choose_base(template_path, reference_paths)
+        if base is not None:
+            reference = DeclarationData.model_validate(job.reference_data) if job.reference_data else None
+            content, notes = asycuda.render(base, approved, reference=reference,
+                                            exchange_rate=asycuda.parse_rate(rate))
+            filename, media_type = f"declaration_{job.id}.xml", "application/xml"
+        else:
+            content, filename, media_type = exporter.render_export(approved, template_path, f"declaration_{job.id}")
+    except (exporter.TemplateRenderError, asycuda.AsycudaError) as exc:
         db.add(GenerationLog(job_id=job.id, user_id=user.id, event="export", status="error", message=str(exc)))
         db.commit()
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
 
     job.status = JobStatus.EXPORTED
-    db.add(GenerationLog(job_id=job.id, user_id=user.id, event="export", message=filename))
+    db.add(GenerationLog(job_id=job.id, user_id=user.id, event="export",
+                         message="\n".join([filename, *notes])))
     db.commit()
     return Response(content, media_type=media_type, headers=_attachment_header(filename))
 

@@ -9,6 +9,7 @@
         {{ item.description }}, {{ item.total_value }} — строка-образец товара:
         строка, где есть «item.», размножается по числу позиций.
   * Без шаблона — встроенный XML (app/export_templates/default_declaration.xml).
+  * XML, выгруженный из самой ASYCUDA (без плейсхолдеров), обрабатывает app/services/asycuda.py.
 
 Шаблоны загружает пользователь, поэтому они исполняются в SandboxedEnvironment:
 из шаблона нельзя добраться до файлов сервера или внутренних объектов Python.

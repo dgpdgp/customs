@@ -209,6 +209,21 @@ _RAW: dict[str, tuple[str, str, str]] = {
     "ui.rev.approved": ("Данные утверждены", "Data approved", "მონაცემები დამტკიცებულია"),
     "ui.rev.download": ("Скачать по шаблону", "Download using template", "შაბლონით ჩამოტვირთვა"),
     "ui.rev.download_json": ("Скачать JSON", "Download JSON", "JSON-ის ჩამოტვირთვა"),
+    "ui.rev.download_asycuda": ("Скачать XML для ASYCUDA", "Download XML for ASYCUDA",
+                                "XML-ის ჩამოტვირთვა ASYCUDA-სთვის"),
+    "ui.rev.asy_rate": ("Курс валюты на дату декларации (необязательно)",
+                        "Exchange rate on the declaration date (optional)",
+                        "ვალუტის კურსი დეკლარაციის თარიღისთვის (არასავალდებულო)"),
+    "ui.rev.asy_hint": (
+        "Файл собирается на основе XML из ASYCUDA: шапка — как в нём, товарные позиции и итоги — новые. "
+        "Если курс не указан, берётся курс из этого XML ({rate}) — он мог устареть. После импорта в ASYCUDA "
+        "проверьте курс (графа 23), налоги, графу 44 и предыдущие документы.",
+        "The file is built on the ASYCUDA XML: the header is kept as is, goods items and totals are new. "
+        "If no rate is entered, the rate from that XML ({rate}) is used and may be outdated. After importing "
+        "into ASYCUDA, check the rate (box 23), taxes, box 44 and previous documents.",
+        "ფაილი იქმნება ASYCUDA-ს XML-ის საფუძველზე: სათაური რჩება უცვლელი, საქონლის პოზიციები და ჯამები — ახალია. "
+        "თუ კურსი არ არის მითითებული, გამოიყენება ამ XML-ის კურსი ({rate}), რომელიც შეიძლება მოძველებული იყოს. "
+        "ASYCUDA-ში იმპორტის შემდეგ შეამოწმეთ კურსი (გრაფა 23), გადასახადები, გრაფა 44 და წინა დოკუმენტები."),
 
     # ---------- JavaScript: экран сравнения ----------
     "js.col.field": ("Поле", "Field", "ველი"),
@@ -324,6 +339,39 @@ _RAW: dict[str, tuple[str, str, str]] = {
     "parse.bad_xml": ("Файл «{name}» не является корректным XML: {error}", "File “{name}” is not valid XML: {error}",
                       "ფაილი „{name}“ არ არის სწორი XML: {error}"),
     "export.template_error": ("Ошибка в шаблоне: {error}", "Template error: {error}", "შაბლონის შეცდომა: {error}"),
+    "asy.bad_xml": ("Не удалось прочитать XML ASYCUDA: {error}", "Could not read the ASYCUDA XML: {error}",
+                    "ASYCUDA-ს XML-ის წაკითხვა ვერ მოხერხდა: {error}"),
+    "asy.not_asycuda": ("Файл не похож на XML из ASYCUDA (нет корневого элемента <ASYCUDA>)",
+                        "The file does not look like an ASYCUDA XML (no <ASYCUDA> root element)",
+                        "ფაილი არ ჰგავს ASYCUDA-ს XML-ს (არ არის ძირეული ელემენტი <ASYCUDA>)"),
+    "asy.no_item": (
+        "В XML из ASYCUDA нет ни одной товарной позиции (<Item>): "
+        "выгрузите из ASYCUDA декларацию хотя бы с одной позицией",
+        "The ASYCUDA XML has no goods item (<Item>): export a declaration with at least one item from ASYCUDA",
+        "ASYCUDA-ს XML-ში არ არის საქონლის პოზიცია (<Item>): "
+        "ASYCUDA-დან გადმოტვირთეთ დეკლარაცია მინიმუმ ერთი პოზიციით"),
+    "asy.no_goods": ("Нет утверждённых товарных позиций", "There are no approved goods items",
+                     "დამტკიცებული საქონლის პოზიციები არ არის"),
+    "asy.bad_rate": ("Курс валюты — положительное число, например 2.6266",
+                     "The exchange rate must be a positive number, e.g. 2.6266",
+                     "ვალუტის კურსი უნდა იყოს დადებითი რიცხვი, მაგალითად 2.6266"),
+    "asy.note.country": (
+        "Позиция {n}: страну происхождения «{value}» не удалось перевести в код ASYCUDA — заполните в ASYCUDA",
+        "Item {n}: country of origin \"{value}\" could not be converted to an ASYCUDA code — fill it in ASYCUDA",
+        "პოზიცია {n}: წარმოშობის ქვეყანა „{value}“ ვერ გადაიყვანა ASYCUDA-ს კოდად — შეავსეთ ASYCUDA-ში"),
+    "asy.note.currency": (
+        "Валюта утверждённых данных ({new}) отличается от валюты в XML ASYCUDA (код {base}) — проверьте графу 22",
+        "The approved currency ({new}) differs from the ASYCUDA XML currency (code {base}) — check box 22",
+        "დამტკიცებული ვალუტა ({new}) განსხვავდება ASYCUDA-ს XML-ის ვალუტისგან (კოდი {base}) — "
+        "შეამოწმეთ გრაფა 22"),
+    "asy.note.no_rate": (
+        "Курс валюты неизвестен — стоимость в национальной валюте не рассчитана, укажите курс в ASYCUDA",
+        "The exchange rate is unknown — national currency values were not calculated; set the rate in ASYCUDA",
+        "ვალუტის კურსი უცნობია — ეროვნულ ვალუტაში ღირებულება არ დაითვალა; მიუთითეთ კურსი ASYCUDA-ში"),
+    "asy.note.prev_decl": (
+        "Блок предыдущей декларации (Prev_decl) скопирован из основы — проверьте списание в ASYCUDA",
+        "The previous declaration block (Prev_decl) was copied from the base file — check the write-off in ASYCUDA",
+        "წინა დეკლარაციის ბლოკი (Prev_decl) გადმოტანილია საწყისი ფაილიდან — შეამოწმეთ ჩამოწერა ASYCUDA-ში"),
     "export.unsupported": ("Шаблоны формата {ext} не поддерживаются (нужен .xml, .txt, .csv или .xlsx)",
                            "{ext} templates are not supported (use .xml, .txt, .csv or .xlsx)",
                            "{ext} ფორმატის შაბლონები მხარდაჭერილი არ არის (საჭიროა .xml, .txt, .csv ან .xlsx)"),
