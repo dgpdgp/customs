@@ -154,3 +154,119 @@ def test_real_sdk_client_without_credentials(monkeypatch):
     monkeypatch.setattr(llm, "_client", lambda: client)
     with pytest.raises(llm.LLMError, match="не задан ключ"):
         llm.extract_declaration(*DOCS)
+
+
+# ---------- Сложность схемы и запасной режим ----------
+
+def _schema_stats(schema: dict) -> tuple[int, int, int]:
+    """(объединения типов, необязательные поля, поля с раскрытием $ref) — как их считает API."""
+    defs = schema.get("$defs", {})
+    stats = {"unions": 0, "optional": 0, "props": 0}
+
+    def walk(node):
+        if "$ref" in node:
+            node = defs[node["$ref"].split("/")[-1]]
+        if "anyOf" in node or isinstance(node.get("type"), list):
+            stats["unions"] += 1
+        if node.get("type") == "object":
+            props = node.get("properties", {})
+            stats["optional"] += len(set(props) - set(node.get("required", [])))
+            stats["props"] += len(props)
+            for child in props.values():
+                walk(child)
+        elif node.get("type") == "array":
+            walk(node["items"])
+
+    walk(schema)
+    return stats["unions"], stats["optional"], stats["props"]
+
+
+def test_output_schema_fits_structured_output_limits():
+    """Документированные лимиты строгой схемы Claude: ≤16 полей с объединением типов
+    (anyOf / ["x","null"]) и ≤24 необязательных поля. Наш проводной формат держит оба на нуле.
+    Порог по числу полей — защита от незаметного разрастания схемы."""
+    unions, optional, props = _schema_stats(llm.OUTPUT_SCHEMA)
+    assert unions == 0
+    assert optional == 0
+    assert props <= 90
+
+
+def bad_request(message: str):
+    import anthropic
+    import httpx2
+
+    response = httpx2.Response(400, request=httpx2.Request("POST", "https://api.anthropic.com/v1/messages"))
+    return anthropic.BadRequestError(message, response=response, body=None)
+
+
+def test_falls_back_to_prompt_json_when_schema_rejected(monkeypatch):
+    monkeypatch.setattr(llm, "_strict_schema_rejected", False)
+    calls = []
+    results = [bad_request("The compiled grammar is too large. Simplify your tool schemas"),
+               make_message(text="Вот результат:\n" + fake_extraction_result().model_dump_json())]
+
+    def stream(**kwargs):
+        calls.append(kwargs)
+        result = results.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return FakeStream(result)
+
+    client = SimpleNamespace(api_key="k", auth_token=None, credentials=None,
+                             beta=SimpleNamespace(messages=SimpleNamespace(stream=stream)))
+    monkeypatch.setattr(llm, "_client", lambda: client)
+
+    result, _ = llm.extract_declaration(*DOCS)
+    assert len(result.new_items) == 4
+    assert "format" in calls[0]["output_config"]
+    assert "format" not in calls[1]["output_config"]
+    assert "JSON Schema" in calls[1]["messages"][0]["content"][-1]["text"]
+
+    # Следующая обработка сразу идёт без строгой схемы — без лишнего отклонённого запроса
+    results.append(make_message())
+    llm.extract_declaration(*DOCS)
+    assert "format" not in calls[2]["output_config"]
+    monkeypatch.setattr(llm, "_strict_schema_rejected", False)
+
+
+def test_other_bad_requests_are_not_retried(monkeypatch):
+    monkeypatch.setattr(llm, "_strict_schema_rejected", False)
+
+    def stream(**kwargs):
+        raise bad_request("prompt is too long: 1200000 tokens > 1000000 maximum")
+
+    client = SimpleNamespace(api_key="k", auth_token=None, credentials=None,
+                             beta=SimpleNamespace(messages=SimpleNamespace(stream=stream)))
+    monkeypatch.setattr(llm, "_client", lambda: client)
+    with pytest.raises(llm.LLMError, match="prompt is too long"):
+        llm.extract_declaration(*DOCS)
+    assert llm._strict_schema_rejected is False
+
+
+def test_wire_format_strings_are_converted():
+    """Ответ в проводном формате: числа строками, пустые строки, 0 вместо null."""
+    wire = json.loads(fake_extraction_result().model_dump_json())
+    item = wire["new_items"][0]
+    item.update(total_value="2 760,00", gross_weight_kg="", reference_item_no=0, source_quote="")
+    wire["new_items"][1]["quantity"] = "около двухсот"
+    wire["issues"][0]["item_no"] = 0
+    wire["issues"][0]["field"] = ""
+
+    result = llm.parse_model_output(json.dumps(wire))
+    first = result.new_items[0]
+    assert first.total_value == 2760.0
+    assert first.gross_weight_kg is None and first.reference_item_no is None and first.source_quote is None
+    assert result.new_items[1].quantity is None
+    assert any("около двухсот" in i.message and i.item_no == 2 for i in result.issues)
+    assert result.issues[0].item_no is None and result.issues[0].field is None
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [("2760", 2760.0), ("2760.50", 2760.5), ("2 760,50", 2760.5), ("1.234,56", 1234.56),
+     ("1,234.56", 1234.56), ("", None), ("abc", None)],
+)
+def test_parse_number(text, expected):
+    from app.services.wire import parse_number
+
+    assert parse_number(text)[0] == expected

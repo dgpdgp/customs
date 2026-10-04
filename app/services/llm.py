@@ -21,12 +21,23 @@ from app.config import get_settings
 from app.schemas import LLMExtractionResult
 from app.services.parsers import ParsedDocument
 from app.services.prompts import SYSTEM_PROMPT, USER_INSTRUCTION
+from app.services.wire import WireResult, wire_to_result
 
 logger = logging.getLogger(__name__)
 
 # JSON Schema ответа строится из Pydantic-модели. transform_schema приводит её
 # к требованиям структурированного вывода API (additionalProperties: false и т. д.).
-OUTPUT_SCHEMA = anthropic.transform_schema(LLMExtractionResult)
+# Проводной формат без объединений типов — см. app/services/wire.py (лимиты строгой схемы).
+OUTPUT_SCHEMA = anthropic.transform_schema(WireResult)
+SCHEMA_INSTRUCTION = (
+    "\n\nВерни ответ строго одним JSON-объектом по этой JSON Schema, без пояснений до и после. "
+    "Неизвестные значения — пустая строка, номера позиций без соответствия — 0.\n"
+    + json.dumps(OUTPUT_SCHEMA, ensure_ascii=False)
+)
+# Признаки ответа API «схема слишком сложная для строгого режима»
+_SCHEMA_TOO_COMPLEX_MARKERS = ("grammar", "too complex", "too many optional", "union types", "schema is too")
+# Если API однажды отклонил строгую схему, до перезапуска не тратим на неё время.
+_strict_schema_rejected = False
 
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 PDF_MAX_BYTES = 32 * 1024 * 1024  # лимит размера запроса с PDF в Claude API
@@ -109,13 +120,26 @@ def extract_declaration(
     else:
         raise LLMError(f"Неизвестный LLM_PROVIDER «{provider}»: допустимо anthropic или openai")
 
-    try:
-        result = LLMExtractionResult.model_validate_json(_strip_code_fence(text))
-    except ValidationError as exc:
-        logger.error("Ответ LLM не прошёл валидацию: %s\n%s", exc, text[:2000])
-        raise LLMError("Модель вернула данные в неожиданном формате, повторите обработку") from exc
+    result = parse_model_output(text)
     logger.info("LLM: %s", json.dumps(info.__dict__))
     return result, info
+
+
+def parse_model_output(text: str) -> LLMExtractionResult:
+    """JSON модели -> внутренние модели. Терпим к обёртке ```json и тексту вокруг JSON
+    (в запасном режиме без строгой схемы)."""
+    candidates = [_strip_code_fence(text)]
+    start, end = text.find("{"), text.rfind("}")
+    if start != -1 and end > start:
+        candidates.append(text[start:end + 1])
+    error: ValidationError | None = None
+    for candidate in candidates:
+        try:
+            return wire_to_result(WireResult.model_validate_json(candidate))
+        except ValidationError as exc:
+            error = exc
+    logger.error("Ответ LLM не прошёл валидацию: %s\n%s", error, text[:2000])
+    raise LLMError("Модель вернула данные в неожиданном формате, повторите обработку") from error
 
 
 def _strip_code_fence(text: str) -> str:
@@ -129,17 +153,44 @@ def _strip_code_fence(text: str) -> str:
 
 # ---------- Claude (Anthropic) ----------
 
+def _is_schema_too_complex(exc: anthropic.BadRequestError) -> bool:
+    message = str(exc.message).lower()
+    return any(marker in message for marker in _SCHEMA_TOO_COMPLEX_MARKERS)
+
+
 def _call_anthropic(reference: ParsedDocument, commercial: list[ParsedDocument]) -> tuple[str, LLMCallInfo]:
+    """Сначала строгий структурированный вывод; если API отклоняет схему как слишком
+    сложную, повторяем без неё (схема в тексте запроса, ответ проверяет Pydantic)."""
+    global _strict_schema_rejected
+    if not _strict_schema_rejected:
+        try:
+            return _anthropic_request(reference, commercial, strict=True)
+        except _SchemaRejected as exc:
+            _strict_schema_rejected = True
+            logger.warning("API отклонил строгую схему (%s) — переходим на JSON по инструкции", exc)
+    return _anthropic_request(reference, commercial, strict=False)
+
+
+class _SchemaRejected(Exception):
+    pass
+
+
+def _anthropic_request(
+    reference: ParsedDocument, commercial: list[ParsedDocument], *, strict: bool
+) -> tuple[str, LLMCallInfo]:
     settings = get_settings()
+    content = build_user_content(reference, commercial)
+    output_config: dict = {"effort": settings.llm_effort}
+    if strict:
+        output_config["format"] = {"type": "json_schema", "schema": OUTPUT_SCHEMA}
+    else:
+        content[-1] = {"type": "text", "text": content[-1]["text"] + SCHEMA_INSTRUCTION}
     request: dict = {
         "model": settings.llm_model,
         "max_tokens": settings.llm_max_tokens,
         "system": SYSTEM_PROMPT,
-        "messages": [{"role": "user", "content": build_user_content(reference, commercial)}],
-        "output_config": {
-            "effort": settings.llm_effort,
-            "format": {"type": "json_schema", "schema": OUTPUT_SCHEMA},
-        },
+        "messages": [{"role": "user", "content": content}],
+        "output_config": output_config,
     }
     if settings.llm_fallbacks:
         # Если модель откажется отвечать, API сам повторит запрос на рекомендованной модели.
@@ -163,6 +214,8 @@ def _call_anthropic(reference: ParsedDocument, commercial: list[ParsedDocument])
     except anthropic.RateLimitError as exc:
         raise LLMError("Превышен лимит запросов к Anthropic API, повторите позже") from exc
     except anthropic.BadRequestError as exc:
+        if strict and _is_schema_too_complex(exc):
+            raise _SchemaRejected(exc.message) from exc
         raise LLMError(f"Запрос отклонён API: {exc.message}") from exc
     except anthropic.APIStatusError as exc:
         raise LLMError(f"Ошибка Anthropic API ({exc.status_code}), повторите позже") from exc
@@ -232,8 +285,7 @@ def _call_openai_compatible(
         **base,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_text + "\n\nВерни ответ строго в формате JSON по этой JSON Schema:\n"
-             + json.dumps(OUTPUT_SCHEMA, ensure_ascii=False)},
+            {"role": "user", "content": user_text + SCHEMA_INSTRUCTION},
         ],
         "response_format": {"type": "json_object"},
     }
