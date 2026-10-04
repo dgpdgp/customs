@@ -10,6 +10,7 @@ email-validator==2.3.0
 bcrypt==5.0.0
 pyjwt==2.13.0
 anthropic==1.11.0
+openai==3.24.0
 pdfplumber==0.11.10
 pypdf==6.19.0
 pandas==3.0.6

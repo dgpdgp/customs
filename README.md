@@ -14,7 +14,7 @@
 |---|---|
 | Backend | Python 3.11+, FastAPI, SQLAlchemy 2, SQLite |
 | Аутентификация | bcrypt (хеш пароля), JWT в httpOnly-cookie или `Authorization: Bearer`, отзыв сессий через БД |
-| LLM | Claude API (`anthropic` SDK), модель `claude-opus-5-5`, структурированный вывод по JSON Schema |
+| LLM | Claude API (`anthropic` SDK), модель `claude-opus-5-5`, структурированный вывод по JSON Schema; опционально OpenAI-совместимые сервисы (`openai` SDK) |
 | Файлы | `pdfplumber` / `pypdf` (PDF), `pandas` + `openpyxl` / `xlrd` (Excel), `defusedxml` (XML) |
 | Frontend | Jinja2 + TailwindCSS (CDN) + чистый JavaScript |
 | Экспорт | Jinja2 в песочнице (XML/TXT/CSV), `openpyxl` (XLSX) |
@@ -34,7 +34,7 @@ customs/
 │   ├── services/
 │   │   ├── parsers.py           # PDF / Excel / CSV / XML -> текст для LLM
 │   │   ├── prompts.py           # системный промпт (защита от галлюцинаций)
-│   │   ├── llm.py               # вызов Claude API, разбор структурированного ответа
+│   │   ├── llm.py               # вызов Claude API (или OpenAI-совместимого), разбор структурированного ответа
 │   │   ├── merge.py             # сборка черновика: шапка из эталона + новые позиции, группировка по ТН ВЭД
 │   │   ├── validation.py        # детерминированная проверка ответа LLM
 │   │   ├── pipeline.py          # фоновая обработка задачи
@@ -198,8 +198,41 @@ LLM с расходом токенов, утверждений и экспорт
 
 Параметры вызова (`app/services/llm.py`): модель `claude-opus-5-5`, `effort: high`, стриминг (большой `max_tokens`),
 `fallbacks: "default"` — если модель откажется отвечать, API повторит запрос на рекомендованной модели
-(отключается `LLM_FALLBACKS=false`; работает только с прямым Claude API). Проект написан под Anthropic SDK;
-перевод на другого провайдера потребует переписать только `llm.py`.
+(отключается `LLM_FALLBACKS=false`; работает только с прямым Claude API). Другие провайдеры — в разделе
+«Другие провайдеры ИИ».
+
+## Другие провайдеры ИИ
+
+По умолчанию используется Claude (`LLM_PROVIDER=anthropic`) — именно с ним проект спроектирован и проверен.
+Можно подключить OpenAI или любой сервис с OpenAI-совместимым API (Chat Completions):
+
+```ini
+LLM_PROVIDER=openai
+OPENAI_API_KEY=ключ-провайдера
+OPENAI_BASE_URL=                 # пусто — OpenAI; иначе адрес API провайдера
+OPENAI_MODEL=название-модели     # из кабинета провайдера
+```
+
+Примеры адресов API (сверяйте с документацией провайдера — адреса и названия моделей меняются):
+
+| Провайдер | OPENAI_BASE_URL |
+|---|---|
+| OpenAI | *(пусто)* |
+| DeepSeek | `https://api.deepseek.com` |
+| Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai/` |
+| OpenRouter | `https://openrouter.ai/api/v1` |
+
+Как это работает и чем отличается от Claude:
+- промпт, схема ответа и вся проверка результата (цитаты, коды, суммы) — те же самые;
+- сначала запрашивается ответ строго по JSON Schema; если сервис такой режим не поддерживает,
+  запрос автоматически повторяется в простом JSON-режиме, а ответ проверяется Pydantic-моделью;
+- **сканы (PDF без текста) обрабатываются только через Claude** — для других провайдеров нужны
+  PDF с текстовым слоем или Excel;
+- серверный фолбэк при отказе модели и настройка глубины рассуждений (`LLM_EFFORT`) есть только у Claude;
+- точность извлечения на других моделях **не проверялась** — сравните результаты на нескольких
+  известных вам декларациях, прежде чем переходить.
+
+Ключ из подписок ChatGPT Plus / Claude Pro не подходит: доступ через API у провайдеров оплачивается отдельно.
 
 ## Diff View
 

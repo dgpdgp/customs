@@ -1,4 +1,9 @@
-"""Вызов Claude API для извлечения и замены товарных позиций."""
+"""Вызов LLM для извлечения и замены товарных позиций.
+
+Основной провайдер — Claude (Anthropic). Дополнительно поддерживаются OpenAI и сервисы
+с OpenAI-совместимым API (LLM_PROVIDER=openai). Промпт, схема ответа и проверка
+результата одинаковы для всех провайдеров.
+"""
 
 import base64
 import json
@@ -9,6 +14,7 @@ from functools import lru_cache
 from xml.sax.saxutils import quoteattr
 
 import anthropic
+import openai
 from pydantic import ValidationError
 
 from app.config import get_settings
@@ -95,6 +101,35 @@ def extract_declaration(
     reference: ParsedDocument, commercial: list[ParsedDocument]
 ) -> tuple[LLMExtractionResult, LLMCallInfo]:
     """Один вызов модели: эталон + новые документы -> структурированный JSON."""
+    provider = get_settings().llm_provider
+    if provider == "anthropic":
+        text, info = _call_anthropic(reference, commercial)
+    elif provider == "openai":
+        text, info = _call_openai_compatible(reference, commercial)
+    else:
+        raise LLMError(f"Неизвестный LLM_PROVIDER «{provider}»: допустимо anthropic или openai")
+
+    try:
+        result = LLMExtractionResult.model_validate_json(_strip_code_fence(text))
+    except ValidationError as exc:
+        logger.error("Ответ LLM не прошёл валидацию: %s\n%s", exc, text[:2000])
+        raise LLMError("Модель вернула данные в неожиданном формате, повторите обработку") from exc
+    logger.info("LLM: %s", json.dumps(info.__dict__))
+    return result, info
+
+
+def _strip_code_fence(text: str) -> str:
+    """Некоторые модели оборачивают JSON в ```json … ``` даже в JSON-режиме."""
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1] if "\n" in text else ""
+        text = text.rsplit("```", 1)[0]
+    return text
+
+
+# ---------- Claude (Anthropic) ----------
+
+def _call_anthropic(reference: ParsedDocument, commercial: list[ParsedDocument]) -> tuple[str, LLMCallInfo]:
     settings = get_settings()
     request: dict = {
         "model": settings.llm_model,
@@ -142,17 +177,104 @@ def extract_declaration(
         raise LLMError("Ответ модели обрезан: документов слишком много. Увеличьте LLM_MAX_TOKENS.")
 
     text = "".join(block.text for block in message.content if block.type == "text")
-    try:
-        result = LLMExtractionResult.model_validate_json(text)
-    except ValidationError as exc:
-        logger.error("Ответ LLM не прошёл валидацию: %s\n%s", exc, text[:2000])
-        raise LLMError("Модель вернула данные в неожиданном формате, повторите обработку") from exc
-
     info = LLMCallInfo(
         model=message.model,
         input_tokens=message.usage.input_tokens,
         output_tokens=message.usage.output_tokens,
         duration_ms=duration_ms,
     )
-    logger.info("LLM: %s", json.dumps(info.__dict__))
-    return result, info
+    return text, info
+
+
+# ---------- OpenAI и OpenAI-совместимые сервисы ----------
+
+def _openai_client() -> openai.OpenAI:
+    settings = get_settings()
+    if not settings.openai_api_key:
+        raise LLMError("На сервере не задан ключ OPENAI_API_KEY. Обратитесь к администратору.")
+    return openai.OpenAI(api_key=settings.openai_api_key, base_url=settings.openai_base_url or None)
+
+
+def _call_openai_compatible(
+    reference: ParsedDocument, commercial: list[ParsedDocument]
+) -> tuple[str, LLMCallInfo]:
+    """Chat Completions API: OpenAI и сервисы с таким же интерфейсом (адрес — OPENAI_BASE_URL).
+
+    Сначала просим ответ строго по JSON Schema; если сервис такой режим не поддерживает
+    (ошибка 400), повторяем в простом JSON-режиме со схемой в тексте запроса. Ответ в любом
+    случае проверяется той же Pydantic-моделью, что и для Claude.
+    """
+    settings = get_settings()
+    if not settings.openai_model:
+        raise LLMError("Не задана модель OPENAI_MODEL. Обратитесь к администратору.")
+    scans = [d.name for d in (reference, *commercial) if not d.has_text_layer]
+    if scans:
+        raise LLMError(f"Файл «{scans[0]}» — скан без текста. Сканы обрабатываются только через Claude "
+                       "(LLM_PROVIDER=anthropic); либо загрузите PDF с текстовым слоем или Excel.")
+    user_text = build_user_content(reference, commercial)[-1]["text"]
+    client = _openai_client()
+
+    base: dict = {"model": settings.openai_model}
+    if settings.openai_max_tokens:
+        # Официальный API OpenAI для новых моделей принимает max_completion_tokens,
+        # совместимые сервисы обычно — max_tokens.
+        key = "max_tokens" if settings.openai_base_url else "max_completion_tokens"
+        base[key] = settings.openai_max_tokens
+    strict_request = {
+        **base,
+        "messages": [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": user_text}],
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {"name": "declaration_extraction", "schema": OUTPUT_SCHEMA, "strict": True},
+        },
+    }
+    json_mode_request = {
+        **base,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_text + "\n\nВерни ответ строго в формате JSON по этой JSON Schema:\n"
+             + json.dumps(OUTPUT_SCHEMA, ensure_ascii=False)},
+        ],
+        "response_format": {"type": "json_object"},
+    }
+
+    started = time.monotonic()
+    try:
+        try:
+            response = client.chat.completions.create(**strict_request)
+        except openai.BadRequestError:
+            logger.warning("Сервис отклонил режим JSON Schema, повторяем в JSON-режиме", exc_info=True)
+            response = client.chat.completions.create(**json_mode_request)
+    except openai.AuthenticationError as exc:
+        raise LLMError("Неверный ключ OPENAI_API_KEY") from exc
+    except openai.PermissionDeniedError as exc:
+        raise LLMError(f"У ключа нет доступа к модели {settings.openai_model}") from exc
+    except openai.NotFoundError as exc:
+        raise LLMError(f"Модель «{settings.openai_model}» не найдена: "
+                       "проверьте OPENAI_MODEL и OPENAI_BASE_URL") from exc
+    except openai.RateLimitError as exc:
+        raise LLMError("Превышен лимит запросов или закончились деньги на балансе провайдера") from exc
+    except openai.BadRequestError as exc:
+        raise LLMError(f"Запрос отклонён API: {exc.message}") from exc
+    except openai.APIStatusError as exc:
+        raise LLMError(f"Ошибка API провайдера ({exc.status_code}), повторите позже") from exc
+    except openai.APIConnectionError as exc:
+        raise LLMError("Нет соединения с API провайдера (проверьте OPENAI_BASE_URL)") from exc
+    duration_ms = int((time.monotonic() - started) * 1000)
+
+    if not response.choices:
+        raise LLMError("Провайдер вернул пустой ответ, повторите обработку")
+    choice = response.choices[0]
+    if getattr(choice.message, "refusal", None) or choice.finish_reason == "content_filter":
+        raise LLMError("Модель отказалась обрабатывать документы. Проверьте содержимое файлов.")
+    if choice.finish_reason == "length":
+        raise LLMError("Ответ модели обрезан: увеличьте OPENAI_MAX_TOKENS или разделите поставку.")
+
+    usage = response.usage
+    info = LLMCallInfo(
+        model=response.model or settings.openai_model,
+        input_tokens=(usage.prompt_tokens if usage else 0) or 0,
+        output_tokens=(usage.completion_tokens if usage else 0) or 0,
+        duration_ms=duration_ms,
+    )
+    return choice.message.content or "", info

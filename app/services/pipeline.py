@@ -43,7 +43,7 @@ def process_job(job_id: int) -> None:
              message=f"Документов: {1 + len(commercial_docs)}")
 
         # Запись до вызова: по ней считаются суточные лимиты (app/limits.py)
-        _log(db, job, LLM_REQUEST_EVENT, model=settings.llm_model)
+        _log(db, job, LLM_REQUEST_EVENT, model=settings.active_model)
         db.commit()
         result, call = llm.extract_declaration(reference_doc, commercial_docs)
         _log(db, job, "llm_extract", model=call.model, input_tokens=call.input_tokens,

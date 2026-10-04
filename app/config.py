@@ -49,6 +49,18 @@ class Settings(BaseSettings):
     upload_dir: Path = BASE_DIR / "data" / "uploads"
     max_upload_mb: int = 25
 
+    # --- Выбор провайдера LLM ---
+    # anthropic — Claude (основной, проверенный вариант);
+    # openai    — OpenAI или любой сервис с OpenAI-совместимым API
+    #             (адрес задаётся в OPENAI_BASE_URL, модель — в OPENAI_MODEL).
+    llm_provider: str = "anthropic"
+
+    # --- OpenAI и совместимые сервисы ---
+    openai_api_key: str = ""
+    openai_base_url: str = ""  # пусто — api.openai.com
+    openai_model: str = ""  # обязательно при LLM_PROVIDER=openai, например модель из кабинета провайдера
+    openai_max_tokens: int = 0  # 0 — не передавать (у разных сервисов разные правила для этого параметра)
+
     # --- LLM (Anthropic) ---
     # Если ключ пустой, SDK берёт ANTHROPIC_API_KEY / профиль `ant auth login`.
     anthropic_api_key: str = ""
@@ -72,6 +84,10 @@ class Settings(BaseSettings):
     @property
     def max_upload_bytes(self) -> int:
         return self.max_upload_mb * 1024 * 1024
+
+    @property
+    def active_model(self) -> str:
+        return self.openai_model if self.llm_provider == "openai" else self.llm_model
 
     @property
     def allowed_email_set(self) -> set[str]:
