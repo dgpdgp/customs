@@ -126,3 +126,39 @@ def test_create_user_script(client):
     assert result.returncode == 0, result.stderr
     assert client.post("/api/auth/login", json={"email": "admin@example.com", "password": "admin-password"}
                        ).status_code == 200
+
+
+def test_registration_with_invite_code(client, settings):
+    settings(registration_invite_code="tbilisi-2026")
+    page = client.get("/register").text
+    assert 'name="invite_code"' in page
+
+    form = {"email": "broker@gmail.com", "password": "password1", "password_confirm": "password1",
+            "full_name": "A.Tsanava"}
+    wrong = client.post("/register", data={**form, "invite_code": "guess"})
+    assert wrong.status_code == 400 and "Неверный код приглашения" in wrong.text
+    assert 'value="A.Tsanava"' in wrong.text  # введённые данные не теряются
+    assert client.post("/api/auth/register", json={"email": "x@gmail.com", "password": "password1"}
+                       ).status_code == 403  # без кода и через API нельзя
+
+    ok = client.post("/register", data={**form, "invite_code": " tbilisi-2026 "}, follow_redirects=False)
+    assert ok.status_code == 303 and ok.headers["location"] == "/dashboard"
+
+
+def test_invite_code_bruteforce_is_throttled(client, settings):
+    from app.main import register_throttle
+
+    register_throttle._failures.clear()
+    settings(registration_invite_code="tbilisi-2026", login_max_failures=3)
+    for n in range(3):
+        assert client.post("/api/auth/register", json={"email": f"bot{n}@gmail.com", "password": "password1",
+                                                       "invite_code": f"guess{n}"}).status_code == 403
+    # Смена email не помогает: счётчик общий
+    blocked = client.post("/api/auth/register", json={"email": "bot9@gmail.com", "password": "password1",
+                                                      "invite_code": "tbilisi-2026"})
+    assert blocked.status_code == 429
+    register_throttle._failures.clear()
+
+
+def test_without_invite_code_field_hidden(client):
+    assert 'name="invite_code"' not in client.get("/register").text

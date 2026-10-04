@@ -43,7 +43,7 @@ from sqlalchemy.orm import Session
 
 from app.config import BASE_DIR, get_settings
 from app.database import get_db, init_db
-from app.limits import LimitExceeded, check_llm_quota, login_throttle
+from app.limits import LimitExceeded, LoginThrottle, check_llm_quota, login_throttle
 from app.models import DeclarationJob, GenerationLog, JobStatus, User
 from app.schemas import (
     ApproveRequest,
@@ -98,6 +98,7 @@ app = FastAPI(
 app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=APP_DIR / "templates")
 templates.env.globals["registration_enabled"] = lambda: settings.registration_enabled
+templates.env.globals["invite_required"] = lambda: settings.invite_required
 templates.env.globals["STATUS_LABELS"] = {
     JobStatus.PROCESSING: "обработка",
     JobStatus.REVIEW: "на проверке",
@@ -142,9 +143,23 @@ class RegistrationClosed(ValueError):
     pass
 
 
-def _register_user(db: Session, email: str, password: str, full_name: str | None) -> User:
+# Неудачные попытки ввести код приглашения считаются вместе для всех адресов:
+# иначе код можно было бы перебирать, меняя email.
+register_throttle = LoginThrottle()
+INVITE_THROTTLE_KEY = "__invite_code__"
+
+
+def _register_user(
+    db: Session, email: str, password: str, full_name: str | None, invite_code: str | None = None
+) -> User:
     if not settings.can_register(email):
         raise RegistrationClosed("Регистрация закрыта. Учётную запись создаёт администратор сервера.")
+    if settings.invite_required:
+        # Перебор кода ограничен общим счётчиком неудачных попыток (LimitExceeded)
+        register_throttle.check(INVITE_THROTTLE_KEY)
+        if not settings.invite_code_valid(invite_code):
+            register_throttle.record_failure(INVITE_THROTTLE_KEY)
+            raise RegistrationClosed("Неверный код приглашения. Узнайте его у администратора сайта.")
     return create_user(db, email, password, full_name)
 
 
@@ -226,7 +241,7 @@ def index(user: Annotated[User | None, Depends(get_optional_user)]) -> RedirectR
 
 @app.get("/register", response_class=HTMLResponse, include_in_schema=False)
 def register_page(request: Request):
-    return templates.TemplateResponse(request, "register.html", {"error": None, "email": ""})
+    return templates.TemplateResponse(request, "register.html", {"error": None, "email": "", "full_name": ""})
 
 
 @app.post("/register", include_in_schema=False)
@@ -237,19 +252,22 @@ def register_submit(
     password: Annotated[str, Form()],
     password_confirm: Annotated[str, Form()],
     full_name: Annotated[str, Form()] = "",
+    invite_code: Annotated[str, Form()] = "",
 ):
-    def fail(message: str):
+    def fail(message: str, code: int = status.HTTP_400_BAD_REQUEST):
         return templates.TemplateResponse(
-            request, "register.html", {"error": message, "email": email}, status_code=status.HTTP_400_BAD_REQUEST
+            request, "register.html", {"error": message, "email": email, "full_name": full_name}, status_code=code
         )
 
     if password != password_confirm:
         return fail("Пароли не совпадают")
     try:
-        data = RegisterRequest(email=email, password=password, full_name=full_name or None)
-        user = _register_user(db, data.email, data.password, data.full_name)
+        data = RegisterRequest(email=email, password=password, full_name=full_name or None, invite_code=invite_code)
+        user = _register_user(db, data.email, data.password, data.full_name, data.invite_code)
     except ValidationError:
-        return fail("Некорректный email")
+        return fail("Некорректный email: введите адрес почты целиком, например name@gmail.com")
+    except LimitExceeded as exc:
+        return fail(str(exc), status.HTTP_429_TOO_MANY_REQUESTS)
     except ValueError as exc:
         return fail(str(exc))
 
@@ -418,7 +436,9 @@ def export_json(job_id: int, db: DbSession, user: PageUser) -> Response:
 @app.post("/api/auth/register", response_model=UserOut, status_code=status.HTTP_201_CREATED, tags=["auth"])
 def api_register(body: RegisterRequest, db: DbSession):
     try:
-        user = _register_user(db, body.email, body.password, body.full_name)
+        user = _register_user(db, body.email, body.password, body.full_name, body.invite_code)
+    except LimitExceeded as exc:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, str(exc)) from exc
     except RegistrationClosed as exc:
         raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
     except ValueError as exc:

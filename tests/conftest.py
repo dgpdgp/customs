@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from app.database import Base, engine  # noqa: E402
 from app.limits import login_throttle  # noqa: E402
-from app.main import app  # noqa: E402
+from app.main import app, register_throttle  # noqa: E402
 from app.services import llm  # noqa: E402
 from tests.fake_llm import fake_extraction_result  # noqa: E402
 
@@ -28,6 +28,7 @@ def _clean_db():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     login_throttle._failures.clear()
+    register_throttle._failures.clear()
     yield
 
 

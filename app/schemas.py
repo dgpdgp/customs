@@ -122,6 +122,7 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
     full_name: str | None = None
+    invite_code: str | None = None
 
 
 class LoginRequest(BaseModel):

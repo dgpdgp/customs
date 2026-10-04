@@ -10,14 +10,22 @@
   </p>
   {% else %}
   <form method="post" action="/register" class="space-y-4">
+    {% if invite_required() %}
+    <label class="block">
+      <span class="text-sm text-slate-600">Код приглашения</span>
+      <input name="invite_code" type="text" required autocomplete="off"
+             class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+      <span class="text-xs text-slate-500">Код выдаёт администратор сайта</span>
+    </label>
+    {% endif %}
     <label class="block">
       <span class="text-sm text-slate-600">ФИО (необязательно)</span>
-      <input name="full_name" type="text" autocomplete="name"
+      <input name="full_name" type="text" autocomplete="name" value="{{ full_name or '' }}"
              class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
     </label>
     <label class="block">
-      <span class="text-sm text-slate-600">Email</span>
-      <input name="email" type="email" required autocomplete="email" value="{{ email }}"
+      <span class="text-sm text-slate-600">Email — будет вашим логином</span>
+      <input name="email" type="email" required autocomplete="email" value="{{ email }}" placeholder="name@gmail.com"
              class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
     </label>
     <label class="block">

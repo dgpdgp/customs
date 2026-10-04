@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     # или ограничьте её списком адресов (ALLOWED_EMAILS=a@x.com,b@y.com).
     registration_enabled: bool = True
     allowed_emails: str = ""
+    # Код приглашения: если задан, зарегистрироваться на сайте может только тот,
+    # кто его знает (удобный вариант для публичного сервера). Длина — от 8 символов.
+    registration_invite_code: str = ""
     # Защита входа от перебора паролей: N неудачных попыток на email за окно.
     login_max_failures: int = 10
     login_lockout_minutes: int = 15
@@ -93,11 +96,22 @@ class Settings(BaseSettings):
     def allowed_email_set(self) -> set[str]:
         return {e.strip().lower() for e in self.allowed_emails.split(",") if e.strip()}
 
+    @property
+    def invite_required(self) -> bool:
+        return self.registration_enabled and bool(self.registration_invite_code)
+
     def can_register(self, email: str) -> bool:
+        """Открыта ли регистрация для этого адреса (код приглашения проверяется отдельно)."""
         if not self.registration_enabled:
             return False
         allowed = self.allowed_email_set
         return not allowed or email.strip().lower() in allowed
+
+    def invite_code_valid(self, code: str | None) -> bool:
+        if not self.registration_invite_code:
+            return True
+        # compare_digest: время сравнения не зависит от того, сколько символов совпало
+        return secrets.compare_digest((code or "").strip().encode(), self.registration_invite_code.encode())
 
 
 @lru_cache
