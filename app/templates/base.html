@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Декларант{% endblock %} · Customs Assistant</title>
+  <!-- Tailwind Play CDN — удобно для MVP; для продакшена собрать CSS через Tailwind CLI -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="{{ url_for('static', path='css/app.css') }}">
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen">
+  <header class="bg-white border-b border-slate-200">
+    <div class="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
+      <a href="/dashboard" class="font-semibold text-slate-900">Customs Assistant</a>
+      {% if user %}
+      <div class="flex items-center gap-4 text-sm">
+        <span class="text-slate-500">{{ user.email }}</span>
+        <form method="post" action="/logout">
+          <button class="text-slate-600 hover:text-slate-900 underline">Выйти</button>
+        </form>
+      </div>
+      {% endif %}
+    </div>
+  </header>
+  <main class="max-w-7xl mx-auto px-4 py-8">
+    {% block content %}{% endblock %}
+  </main>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

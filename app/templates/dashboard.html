@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Рабочая область{% endblock %}
+{% block content %}
+<div class="grid lg:grid-cols-3 gap-8">
+  <section class="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+    <h1 class="text-xl font-semibold">Новая декларация</h1>
+    <p class="text-sm text-slate-500 mt-1">
+      Реквизиты, условия поставки и брокер берутся из эталонной декларации,
+      товарные позиции — из новых инвойсов и упаковочных листов. Максимум {{ max_mb }} МБ на файл.
+    </p>
+    {% if error %}<p class="mt-4 rounded bg-red-50 text-red-700 px-3 py-2 text-sm">{{ error }}</p>{% endif %}
+
+    <form method="post" action="/jobs" enctype="multipart/form-data" class="mt-6 space-y-6" id="upload-form">
+      <div>
+        <label class="block font-medium" for="reference_file">1. Эталонная (правильная) декларация</label>
+        <p class="text-xs text-slate-500 mb-2">Ранее принятая декларация этого импортёра: PDF, XML или Excel</p>
+        <input id="reference_file" name="reference_file" type="file" required accept="{{ reference_accept }}"
+               class="block w-full text-sm file:mr-4 file:rounded-md file:border-0 file:bg-slate-100 file:px-4 file:py-2 file:text-slate-700 hover:file:bg-slate-200">
+      </div>
+      <div>
+        <label class="block font-medium" for="commercial_files">2. Новые коммерческие документы</label>
+        <p class="text-xs text-slate-500 mb-2">Инвойсы и упаковочные листы: PDF или Excel, можно несколько файлов</p>
+        <input id="commercial_files" name="commercial_files" type="file" multiple required accept="{{ commercial_accept }}"
+               class="block w-full text-sm file:mr-4 file:rounded-md file:border-0 file:bg-slate-100 file:px-4 file:py-2 file:text-slate-700 hover:file:bg-slate-200">
+      </div>
+      <div>
+        <label class="block font-medium" for="template_file">3. Шаблон результата <span class="font-normal text-slate-500">(необязательно)</span></label>
+        <p class="text-xs text-slate-500 mb-2">
+          XML или Excel с плейсхолдерами <code class="bg-slate-100 px-1 rounded">{{ "{{ header.importer.name }}" }}</code>.
+          Без шаблона — стандартный XML. Примеры — в папке <code class="bg-slate-100 px-1 rounded">samples/templates</code>.
+        </p>
+        <input id="template_file" name="template_file" type="file" accept="{{ template_accept }}"
+               class="block w-full text-sm file:mr-4 file:rounded-md file:border-0 file:bg-slate-100 file:px-4 file:py-2 file:text-slate-700 hover:file:bg-slate-200">
+      </div>
+      <label class="flex items-start gap-2 text-sm">
+        <input type="checkbox" name="group_by_hs" value="true" class="mt-1">
+        <span>Объединять позиции с одинаковым кодом ТН ВЭД и страной происхождения
+          <span class="text-slate-500">(суммы считает сервер, а не LLM)</span></span>
+      </label>
+      <button id="submit-btn" class="rounded-md bg-blue-600 text-white px-5 py-2 font-medium hover:bg-blue-700 disabled:opacity-60">
+        Обработать документы
+      </button>
+    </form>
+  </section>
+
+  <aside class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+    <h2 class="font-semibold mb-4">Последние задачи</h2>
+    {% if jobs %}
+    <ul class="divide-y divide-slate-100 text-sm">
+      {% for job in jobs %}
+      <li class="py-2 flex items-center justify-between">
+        <a href="/jobs/{{ job.id }}" class="text-blue-600 hover:underline">Задача №{{ job.id }}</a>
+        <span class="status-badge status-{{ job.status }}">{{ STATUS_LABELS.get(job.status, job.status) }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-sm text-slate-500">Пока нет задач.</p>
+    {% endif %}
+  </aside>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  // Блокируем повторную отправку формы, пока файлы загружаются
+  document.getElementById("upload-form").addEventListener("submit", () => {
+    const btn = document.getElementById("submit-btn");
+    btn.disabled = true;
+    btn.textContent = "Загрузка…";
+  });
+</script>
+{% endblock %}

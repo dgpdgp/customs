@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Встроенный шаблон экспорта (используется, если пользователь не загрузил свой).
+  Нейтральная структура для интеграции: все поля DeclarationData без привязки
+  к конкретной таможенной системе. Синтаксис — Jinja2 (см. app/services/exporter.py).
+-->
+<Declaration generated="{{ today }}">
+  <Header>
+    <DeclarationType>{{ header.declaration_type }}</DeclarationType>
+    <CustomsOffice>{{ header.customs_office }}</CustomsOffice>
+{%- for role, party in [("Exporter", header.exporter), ("Importer", header.importer), ("Declarant", header.declarant)] %}
+    <{{ role }}>
+      <Name>{{ party.name }}</Name>
+      <Address>{{ party.address }}</Address>
+      <Country>{{ party.country }}</Country>
+      <TaxId>{{ party.tax_id }}</TaxId>
+    </{{ role }}>
+{%- endfor %}
+    <Contract number="{{ header.contract_number }}" date="{{ header.contract_date }}"/>
+    <DeliveryTerms code="{{ header.delivery_terms }}" place="{{ header.delivery_place }}"/>
+    <Currency>{{ header.currency }}</Currency>
+    <CountryOfDispatch>{{ header.country_of_dispatch }}</CountryOfDispatch>
+    <CountryOfDestination>{{ header.country_of_destination }}</CountryOfDestination>
+    <TransportMode>{{ header.transport_mode }}</TransportMode>
+  </Header>
+  <Shipment>
+{%- for number in shipment.invoice_numbers %}
+    <InvoiceNumber>{{ number }}</InvoiceNumber>
+{%- endfor %}
+    <InvoiceDate>{{ shipment.invoice_date }}</InvoiceDate>
+    <TransportDocument>{{ shipment.transport_document }}</TransportDocument>
+    <VehicleId>{{ shipment.vehicle_id }}</VehicleId>
+    <TotalInvoiceValue>{{ shipment.total_invoice_value|num(2) }}</TotalInvoiceValue>
+    <TotalPackages>{{ shipment.total_packages }}</TotalPackages>
+    <TotalGrossWeightKg>{{ shipment.total_gross_weight_kg|num(3) }}</TotalGrossWeightKg>
+    <TotalNetWeightKg>{{ shipment.total_net_weight_kg|num(3) }}</TotalNetWeightKg>
+  </Shipment>
+  <Items count="{{ items|length }}">
+{%- for item in items %}
+    <Item number="{{ item.item_no }}">
+      <Description>{{ item.description }}</Description>
+      <Article>{{ item.article }}</Article>
+      <HSCode>{{ item.hs_code }}</HSCode>
+      <CountryOfOrigin>{{ item.country_of_origin }}</CountryOfOrigin>
+      <Quantity unit="{{ item.unit }}">{{ item.quantity }}</Quantity>
+      <Packages>{{ item.packages }}</Packages>
+      <GrossWeightKg>{{ item.gross_weight_kg|num(3) }}</GrossWeightKg>
+      <NetWeightKg>{{ item.net_weight_kg|num(3) }}</NetWeightKg>
+      <UnitPrice>{{ item.unit_price|num(2) }}</UnitPrice>
+      <Value currency="{{ header.currency }}">{{ item.total_value|num(2) }}</Value>
+    </Item>
+{%- endfor %}
+  </Items>
+</Declaration>

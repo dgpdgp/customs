@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+{#
+  ПРИМЕР шаблона в стиле ASYCUDA World (упрощённый, для демонстрации).
+  Это НЕ официальная схема: перед интеграцией сверьте имена тегов, обязательные
+  элементы и справочники кодов с XSD/спецификацией вашей таможенной администрации.
+
+  Этот блок — комментарий Jinja2: в итоговый файл он не попадает.
+  Синтаксис плейсхолдеров — Jinja2:
+    {{ header.importer.name }}       — поле шапки
+    {% for item in items %}...{% endfor %} — цикл по товарным позициям
+    {{ value|num(3) }}               — число с 3 знаками после точки
+  Доступные переменные: header, shipment, items, declaration, today.
+#}
+<ASYCUDA>
+  <Identification>
+    <Office_segment>
+      <Customs_clearance_office_code>{{ header.customs_office }}</Customs_clearance_office_code>
+    </Office_segment>
+    <Type>
+      <Type_of_declaration>{{ header.declaration_type }}</Type_of_declaration>
+    </Type>
+  </Identification>
+  <Traders>
+    <Exporter>
+      <Exporter_name>{{ header.exporter.name }}</Exporter_name>
+      <Exporter_address>{{ header.exporter.address }}</Exporter_address>
+    </Exporter>
+    <Consignee>
+      <Consignee_code>{{ header.importer.tax_id }}</Consignee_code>
+      <Consignee_name>{{ header.importer.name }}</Consignee_name>
+      <Consignee_address>{{ header.importer.address }}</Consignee_address>
+    </Consignee>
+  </Traders>
+  <Declarant>
+    <Declarant_code>{{ header.declarant.tax_id }}</Declarant_code>
+    <Declarant_name>{{ header.declarant.name }}</Declarant_name>
+  </Declarant>
+  <General_information>
+    <Country>
+      <Export_country_name>{{ header.country_of_dispatch }}</Export_country_name>
+      <Destination_country_name>{{ header.country_of_destination }}</Destination_country_name>
+    </Country>
+  </General_information>
+  <Transport>
+    <Means_of_transport>
+      <Border_information>
+        <Mode>{{ header.transport_mode }}</Mode>
+        <Identity>{{ shipment.vehicle_id }}</Identity>
+      </Border_information>
+    </Means_of_transport>
+    <Delivery_terms>
+      <Code>{{ header.delivery_terms }}</Code>
+      <Place>{{ header.delivery_place }}</Place>
+    </Delivery_terms>
+  </Transport>
+  <Financial>
+    <Contract_number>{{ header.contract_number }}</Contract_number>
+    <Contract_date>{{ header.contract_date }}</Contract_date>
+  </Financial>
+  <Valuation>
+    <Total_invoice>
+      <Amount_foreign_currency>{{ shipment.total_invoice_value|num(2) }}</Amount_foreign_currency>
+      <Currency_code>{{ header.currency }}</Currency_code>
+    </Total_invoice>
+    <Invoice_number>{{ shipment.invoice_numbers|join(", ") }}</Invoice_number>
+    <Total_gross_weight>{{ shipment.total_gross_weight_kg|num(3) }}</Total_gross_weight>
+    <Total_net_weight>{{ shipment.total_net_weight_kg|num(3) }}</Total_net_weight>
+  </Valuation>
+{%- for item in items %}
+  <Item>
+    <Packages>
+      <Number_of_packages>{{ item.packages }}</Number_of_packages>
+    </Packages>
+    <Tarification>
+      <HScode>
+        <Commodity_code>{{ item.hs_code }}</Commodity_code>
+      </HScode>
+      <Supplementary_unit>
+        <Supplementary_unit_code>{{ item.unit }}</Supplementary_unit_code>
+        <Supplementary_unit_quantity>{{ item.quantity }}</Supplementary_unit_quantity>
+      </Supplementary_unit>
+    </Tarification>
+    <Goods_description>
+      <Country_of_origin_code>{{ item.country_of_origin }}</Country_of_origin_code>
+      <Description_of_goods>{{ item.description }}</Description_of_goods>
+      <Commercial_Description>{{ item.article }}</Commercial_Description>
+    </Goods_description>
+    <Valuation_item>
+      <Weight_itm>
+        <Gross_weight_itm>{{ item.gross_weight_kg|num(3) }}</Gross_weight_itm>
+        <Net_weight_itm>{{ item.net_weight_kg|num(3) }}</Net_weight_itm>
+      </Weight_itm>
+      <Item_Invoice>
+        <Amount_foreign_currency>{{ item.total_value|num(2) }}</Amount_foreign_currency>
+        <Currency_code>{{ header.currency }}</Currency_code>
+      </Item_Invoice>
+    </Valuation_item>
+  </Item>
+{%- endfor %}
+</ASYCUDA>

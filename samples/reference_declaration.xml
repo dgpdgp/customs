@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ДЕМОНСТРАЦИОННАЯ эталонная декларация. Все организации и данные вымышлены.
+  Коды ТН ВЭД приведены только для примера и не являются классификационным решением.
+-->
+<Declaration number="DEMO-2025-0042" date="18.09.2025">
+  <Type>ИМ 40</Type>
+  <CustomsOffice>00101 — ЦЭД «Ташкент-товарный» (демо)</CustomsOffice>
+  <Exporter>
+    <Name>Beta Maschinenbau GmbH</Name>
+    <Address>Industriestraße 12, 70565 Stuttgart</Address>
+    <Country>DE</Country>
+  </Exporter>
+  <Importer>
+    <Name>ООО «Альфа Импорт»</Name>
+    <Address>г. Ташкент, ул. Демонстрационная, 1</Address>
+    <Country>UZ</Country>
+    <TIN>300000001</TIN>
+  </Importer>
+  <Declarant>
+    <Name>ООО «Гамма Брокер»</Name>
+    <Address>г. Ташкент, ул. Таможенная, 5</Address>
+    <Country>UZ</Country>
+    <TIN>300000002</TIN>
+  </Declarant>
+  <Contract number="AB-2025/17" date="15.03.2025"/>
+  <DeliveryTerms incoterms="DAP" place="Tashkent"/>
+  <Currency>EUR</Currency>
+  <CountryOfDispatch>DE</CountryOfDispatch>
+  <CountryOfDestination>UZ</CountryOfDestination>
+  <TransportMode>30 (автомобильный)</TransportMode>
+  <Invoice number="INV-2025-342" date="10.09.2025" total="2965.00"/>
+  <TransportDocument>CMR 0458812</TransportDocument>
+  <Vehicle>S 482 KL / SA 7731</Vehicle>
+  <Totals packages="5" gross="75.6" net="69.0"/>
+  <Items>
+    <Item no="1">
+      <Description>ПОДШИПНИК ШАРИКОВЫЙ РАДИАЛЬНЫЙ 6205-2RS, АРТ. BRG-6205</Description>
+      <Article>BRG-6205</Article>
+      <HSCode>8482100009</HSCode>
+      <Origin>DE</Origin>
+      <Quantity unit="шт">400</Quantity>
+      <Packages>3</Packages>
+      <GrossWeight>52.5</GrossWeight>
+      <NetWeight>48.0</NetWeight>
+      <UnitPrice>4.60</UnitPrice>
+      <Value>1840.00</Value>
+    </Item>
+    <Item no="2">
+      <Description>РЕМЕНЬ ПРИВОДНОЙ КЛИНОВОЙ SPZ 1250, АРТ. BLT-SPZ1250</Description>
+      <Article>BLT-SPZ1250</Article>
+      <HSCode>4010320000</HSCode>
+      <Origin>DE</Origin>
+      <Quantity unit="шт">150</Quantity>
+      <Packages>2</Packages>
+      <GrossWeight>23.1</GrossWeight>
+      <NetWeight>21.0</NetWeight>
+      <UnitPrice>7.50</UnitPrice>
+      <Value>1125.00</Value>
+    </Item>
+  </Items>
+</Declaration>
