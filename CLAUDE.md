@@ -5,7 +5,8 @@
 показывает сравнение «было / стало» и выгружает результат (в том числе в «родной» XML ASYCUDA World).
 
 **Перед работой прочитай [`docs/HANDOFF.md`](docs/HANDOFF.md)** — там текущее состояние, открытые задачи и то,
-что известно об ASYCUDA. Устройство проекта подробно — в [`README.md`](README.md).
+что известно об ASYCUDA. Ответы на вопросы пользователя — [`docs/ANSWERS.md`](docs/ANSWERS.md), проверка
+грузинского перевода — [`docs/ka-review.md`](docs/ka-review.md). Устройство проекта — [`README.md`](README.md).
 
 ## Как общаться с пользователем
 
@@ -34,7 +35,12 @@ node --test tests/js/diff.test.mjs
 ## Код
 
 - Каждая строка интерфейса и сообщение об ошибке — через `t()` из `app/i18n.py`, с тремя переводами
-  (ru, en, ka). Грузинские тексты требуют проверки носителем языка.
+  (ru, en, ka). Грузинские тексты требуют проверки носителем языка; после изменения строк обнови таблицу:
+  `python scripts/ka_review.py > docs/ka-review.md`.
 - Модель ИИ не должна угадывать данные: неизвестное — пусто плюс замечание декларанту.
-- Схема ответа ИИ (`app/services/wire.py`) — без nullable/union-полей: у Claude API лимит 16 union-параметров
-  и 24 необязательных («compiled grammar is too large»). Тест `tests/test_llm.py` следит за лимитами.
+- Схема ответа ИИ (`app/services/wire.py`) — без nullable/union-полей и необязательных полей (лимиты Claude API:
+  16 и 24). Но и такую схему (вариант `full`) настоящий API отклоняет: «compiled grammar is too large», сайт
+  работает в запасном режиме. Меньшие схемы — `app/services/schema_variants.py`, выбор — `LLM_SCHEMA_VARIANT`,
+  проверка на API — `python scripts/check_llm_schema.py --variant all`. Любой вариант сводится к `WireResult`.
+- Экспорт в ASYCUDA (`app/services/asycuda.py`) строится по реальному файлу пользователя; правила ASYCUDA
+  известны по одной декларации — не выдавай догадки о них за факт.
