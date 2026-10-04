@@ -95,7 +95,7 @@ class GenerationLog(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     job_id: Mapped[int] = mapped_column(ForeignKey("declaration_jobs.id", ondelete="CASCADE"), index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    # parse | llm_extract | validate | approve | export | error
+    # parse | llm_request | llm_extract | validate | approve | export | error
     event: Mapped[str] = mapped_column(String(32))
     status: Mapped[str] = mapped_column(String(16), default="ok")  # ok | error
     model: Mapped[str | None] = mapped_column(String(64))

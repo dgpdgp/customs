@@ -14,6 +14,7 @@ import bcrypt
 import jwt
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -51,6 +52,20 @@ def verify_password(password: str, password_hash: str) -> bool:
         return bcrypt.checkpw(password.encode(), password_hash.encode())
     except ValueError:  # пароль длиннее 72 байт или повреждённый хеш
         return False
+
+
+def create_user(db: Session, email: str, password: str, full_name: str | None = None) -> User:
+    """Создаёт пользователя. ValueError — слабый пароль или email уже занят."""
+    validate_password_strength(password)
+    user = User(email=email.strip().lower(), password_hash=hash_password(password), full_name=full_name or None)
+    db.add(user)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise ValueError("Пользователь с таким email уже зарегистрирован") from None
+    db.refresh(user)
+    return user
 
 
 def authenticate(db: Session, email: str, password: str) -> User | None:

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import SessionLocal
+from app.limits import LLM_REQUEST_EVENT
 from app.models import DeclarationJob, GenerationLog, JobStatus
 from app.services import llm, validation
 from app.services.merge import build_proposed
@@ -41,6 +42,9 @@ def process_job(job_id: int) -> None:
         _log(db, job, "parse", duration_ms=int((time.monotonic() - started) * 1000),
              message=f"Документов: {1 + len(commercial_docs)}")
 
+        # Запись до вызова: по ней считаются суточные лимиты (app/limits.py)
+        _log(db, job, LLM_REQUEST_EVENT, model=settings.llm_model)
+        db.commit()
         result, call = llm.extract_declaration(reference_doc, commercial_docs)
         _log(db, job, "llm_extract", model=call.model, input_tokens=call.input_tokens,
              output_tokens=call.output_tokens, duration_ms=call.duration_ms,

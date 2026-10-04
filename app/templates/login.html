@@ -18,6 +18,8 @@
     </label>
     <button class="w-full rounded-md bg-blue-600 text-white py-2 font-medium hover:bg-blue-700">Войти</button>
   </form>
+  {% if registration_enabled() %}
   <p class="mt-6 text-sm text-slate-500">Нет аккаунта? <a href="/register" class="text-blue-600 underline">Регистрация</a></p>
+  {% endif %}
 </div>
 {% endblock %}

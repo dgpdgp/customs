@@ -4,7 +4,7 @@ HTML-страницы (Jinja2 + Tailwind) и JSON API работают пове�
 сервисов. Запуск: `uvicorn app.main:app --reload` (подробности в README.md).
 
 Маршруты
-  Страницы:  GET  /  /login  /register  /dashboard  /jobs/{id}
+  Страницы:  GET  /  /login  /register  /dashboard  /jobs/{id}  /healthz
              POST /login  /register  /logout  /jobs (загрузка файлов)
              GET  /jobs/{id}/export  /jobs/{id}/export.json  (скачивание)
   JSON API:  POST /api/auth/register  /api/auth/login  /api/auth/logout
@@ -39,11 +39,11 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import BASE_DIR, get_settings
 from app.database import get_db, init_db
+from app.limits import LimitExceeded, check_llm_quota, login_throttle
 from app.models import DeclarationJob, GenerationLog, JobStatus, User
 from app.schemas import (
     ApproveRequest,
@@ -58,12 +58,11 @@ from app.security import (
     LoginRequired,
     authenticate,
     create_session_token,
+    create_user,
     get_current_user,
     get_optional_user,
-    hash_password,
     require_user_page,
     revoke_session,
-    validate_password_strength,
 )
 from app.services import exporter, validation
 from app.services.parsers import EXCEL_EXTENSIONS, PDF_EXTENSIONS
@@ -88,9 +87,17 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title="Customs Declaration Assistant", version="0.1.0", lifespan=lifespan)
+app = FastAPI(
+    title="Customs Declaration Assistant",
+    version="0.1.0",
+    lifespan=lifespan,
+    docs_url="/docs" if settings.enable_api_docs else None,
+    redoc_url="/redoc" if settings.enable_api_docs else None,
+    openapi_url="/openapi.json" if settings.enable_api_docs else None,
+)
 app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=APP_DIR / "templates")
+templates.env.globals["registration_enabled"] = lambda: settings.registration_enabled
 templates.env.globals["STATUS_LABELS"] = {
     JobStatus.PROCESSING: "обработка",
     JobStatus.REVIEW: "на проверке",
@@ -131,16 +138,24 @@ def _safe_next(next_url: str | None) -> str:
     return "/dashboard"
 
 
+class RegistrationClosed(ValueError):
+    pass
+
+
 def _register_user(db: Session, email: str, password: str, full_name: str | None) -> User:
-    validate_password_strength(password)
-    user = User(email=email.strip().lower(), password_hash=hash_password(password), full_name=full_name or None)
-    db.add(user)
-    try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        raise ValueError("Пользователь с таким email уже зарегистрирован") from None
-    db.refresh(user)
+    if not settings.can_register(email):
+        raise RegistrationClosed("Регистрация закрыта. Учётную запись создаёт администратор сервера.")
+    return create_user(db, email, password, full_name)
+
+
+def _login_or_raise(db: Session, email: str, password: str) -> User | None:
+    """Проверка пароля с ограничением числа неудачных попыток (LimitExceeded)."""
+    login_throttle.check(email)
+    user = authenticate(db, email, password)
+    if user is None:
+        login_throttle.record_failure(email)
+    else:
+        login_throttle.reset(email)
     return user
 
 
@@ -192,6 +207,12 @@ def _job_payload(job: DeclarationJob) -> dict:
 
 def _attachment_header(filename: str) -> dict[str, str]:
     return {"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"}
+
+
+@app.get("/healthz", include_in_schema=False)
+def healthz() -> dict:
+    """Проверка живости для Docker / мониторинга."""
+    return {"status": "ok"}
 
 
 # =====================================================================
@@ -250,14 +271,17 @@ def login_submit(
     password: Annotated[str, Form()],
     next: Annotated[str, Form()] = "",
 ):
-    user = authenticate(db, email, password)
-    if user is None:
+    def fail(message: str, code: int):
         return templates.TemplateResponse(
-            request,
-            "login.html",
-            {"error": "Неверный email или пароль", "email": email, "next": next},
-            status_code=status.HTTP_401_UNAUTHORIZED,
+            request, "login.html", {"error": message, "email": email, "next": next}, status_code=code
         )
+
+    try:
+        user = _login_or_raise(db, email, password)
+    except LimitExceeded as exc:
+        return fail(str(exc), status.HTTP_429_TOO_MANY_REQUESTS)
+    if user is None:
+        return fail("Неверный email или пароль", status.HTTP_401_UNAUTHORIZED)
     response = RedirectResponse(_safe_next(next), status_code=status.HTTP_303_SEE_OTHER)
     _set_auth_cookie(response, create_session_token(db, user, request))
     return response
@@ -319,6 +343,10 @@ def upload_documents(
         return _render_dashboard(request, db, user, "Загрузите хотя бы один инвойс или упаковочный лист", 400)
     if len(commercial_files) > MAX_COMMERCIAL_FILES:
         return _render_dashboard(request, db, user, f"Не больше {MAX_COMMERCIAL_FILES} коммерческих документов", 400)
+    try:
+        check_llm_quota(db, user.id)
+    except LimitExceeded as exc:
+        return _render_dashboard(request, db, user, str(exc), status.HTTP_429_TOO_MANY_REQUESTS)
 
     job = DeclarationJob(user_id=user.id, status=JobStatus.PROCESSING, options={"group_by_hs": group_by_hs})
     db.add(job)
@@ -391,6 +419,8 @@ def export_json(job_id: int, db: DbSession, user: PageUser) -> Response:
 def api_register(body: RegisterRequest, db: DbSession):
     try:
         user = _register_user(db, body.email, body.password, body.full_name)
+    except RegistrationClosed as exc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
     return UserOut(id=user.id, email=user.email, full_name=user.full_name)
@@ -398,7 +428,10 @@ def api_register(body: RegisterRequest, db: DbSession):
 
 @app.post("/api/auth/login", response_model=TokenResponse, tags=["auth"])
 def api_login(body: LoginRequest, request: Request, db: DbSession):
-    user = authenticate(db, body.email, body.password)
+    try:
+        user = _login_or_raise(db, body.email, body.password)
+    except LimitExceeded as exc:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, str(exc)) from exc
     if user is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Неверный email или пароль")
     return TokenResponse(access_token=create_session_token(db, user, request))
@@ -457,6 +490,10 @@ def api_retry(job_id: int, background_tasks: BackgroundTasks, db: DbSession, use
     job = _get_job(db, user, job_id)
     if job.status != JobStatus.FAILED:
         raise HTTPException(status.HTTP_409_CONFLICT, "Повторить можно только задачу с ошибкой")
+    try:
+        check_llm_quota(db, user.id)
+    except LimitExceeded as exc:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, str(exc)) from exc
     job.status = JobStatus.PROCESSING
     job.error_message = None
     db.commit()

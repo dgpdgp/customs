@@ -28,6 +28,22 @@ class Settings(BaseSettings):
     # True в продакшене за HTTPS: cookie с токеном не уйдёт по HTTP.
     cookie_secure: bool = False
 
+    # --- Доступ к публичному серверу ---
+    # Каждая загрузка — платный вызов LLM с вашего ключа. На публичном сервере
+    # закройте регистрацию (REGISTRATION_ENABLED=false и scripts/create_user.py)
+    # или ограничьте её списком адресов (ALLOWED_EMAILS=a@x.com,b@y.com).
+    registration_enabled: bool = True
+    allowed_emails: str = ""
+    # Защита входа от перебора паролей: N неудачных попыток на email за окно.
+    login_max_failures: int = 10
+    login_lockout_minutes: int = 15
+    # Swagger UI (/docs). На публичном сервере можно выключить.
+    enable_api_docs: bool = True
+
+    # --- Лимиты расходов на LLM (запросов за последние 24 часа; 0 — без лимита) ---
+    max_llm_requests_per_user_per_day: int = 30
+    max_llm_requests_per_day: int = 100
+
     # --- Хранилище ---
     database_url: str = f"sqlite:///{BASE_DIR / 'data' / 'app.db'}"
     upload_dir: Path = BASE_DIR / "data" / "uploads"
@@ -56,6 +72,16 @@ class Settings(BaseSettings):
     @property
     def max_upload_bytes(self) -> int:
         return self.max_upload_mb * 1024 * 1024
+
+    @property
+    def allowed_email_set(self) -> set[str]:
+        return {e.strip().lower() for e in self.allowed_emails.split(",") if e.strip()}
+
+    def can_register(self, email: str) -> bool:
+        if not self.registration_enabled:
+            return False
+        allowed = self.allowed_email_set
+        return not allowed or email.strip().lower() in allowed
 
 
 @lru_cache

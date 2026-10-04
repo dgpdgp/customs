@@ -4,6 +4,11 @@
 <div class="max-w-sm mx-auto bg-white rounded-xl shadow-sm border border-slate-200 p-8">
   <h1 class="text-xl font-semibold mb-6">Регистрация</h1>
   {% if error %}<p class="mb-4 rounded bg-red-50 text-red-700 px-3 py-2 text-sm">{{ error }}</p>{% endif %}
+  {% if not registration_enabled() %}
+  <p class="rounded bg-slate-100 text-slate-700 px-3 py-2 text-sm">
+    Регистрация закрыта. Учётную запись создаёт администратор сервера.
+  </p>
+  {% else %}
   <form method="post" action="/register" class="space-y-4">
     <label class="block">
       <span class="text-sm text-slate-600">ФИО (необязательно)</span>
@@ -27,6 +32,7 @@
     </label>
     <button class="w-full rounded-md bg-blue-600 text-white py-2 font-medium hover:bg-blue-700">Создать аккаунт</button>
   </form>
+  {% endif %}
   <p class="mt-6 text-sm text-slate-500">Уже есть аккаунт? <a href="/login" class="text-blue-600 underline">Войти</a></p>
 </div>
 {% endblock %}
