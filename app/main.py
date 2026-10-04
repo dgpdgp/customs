@@ -36,16 +36,16 @@ from fastapi import (
 )
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from starlette.datastructures import Headers
 from starlette.requests import cookie_parser
 
-from app import i18n
+from app import i18n, runtime_settings
+from app.admin import router as admin_router
 from app.config import BASE_DIR, get_settings
-from app.database import get_db, init_db
+from app.database import SessionLocal, get_db, init_db
 from app.i18n import t
 from app.limits import LimitExceeded, LoginThrottle, check_llm_quota, login_throttle
 from app.models import DeclarationJob, GenerationLog, JobStatus, User
@@ -71,6 +71,7 @@ from app.security import (
 from app.services import exporter, validation
 from app.services.parsers import EXCEL_EXTENSIONS, PDF_EXTENSIONS
 from app.services.pipeline import process_job, recover_interrupted_jobs
+from app.web import templates
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -88,6 +89,9 @@ MAX_COMMERCIAL_FILES = 20
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
+    with SessionLocal() as db:
+        runtime_settings.apply_overrides(db)  # настройки и ключи, сохранённые в админ-панели
+        runtime_settings.ensure_admins(db)  # администраторы из ADMIN_EMAILS
     recover_interrupted_jobs()
     yield
 
@@ -101,23 +105,6 @@ app = FastAPI(
     openapi_url="/openapi.json" if settings.enable_api_docs else None,
 )
 app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
-
-
-def _i18n_context(request: Request) -> dict:
-    """Переводы для каждого шаблона: язык берётся из cookie запроса."""
-    lang = i18n.normalize(request.cookies.get(i18n.COOKIE_NAME))
-    return {
-        "lang": lang,
-        "languages": i18n.LANGUAGES,
-        "language_short": i18n.LANGUAGE_SHORT,
-        "t": lambda key, **params: i18n.t(key, lang, **params),
-        "js_i18n": i18n.js_messages(lang),
-    }
-
-
-templates = Jinja2Templates(directory=APP_DIR / "templates", context_processors=[_i18n_context])
-templates.env.globals["registration_enabled"] = lambda: settings.registration_enabled
-templates.env.globals["invite_required"] = lambda: settings.invite_required
 
 
 class LanguageMiddleware:
@@ -139,6 +126,7 @@ class LanguageMiddleware:
 
 
 app.add_middleware(LanguageMiddleware)
+app.include_router(admin_router)
 
 DbSession = Annotated[Session, Depends(get_db)]
 PageUser = Annotated[User, Depends(require_user_page)]

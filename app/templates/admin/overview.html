@@ -1,0 +1,70 @@
+{% extends "admin/base.html" %}
+{% block admin_content %}
+<div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+  <div class="admin-card">
+    <div class="admin-card-label">{{ t("admin.ov.users") }}</div>
+    <div class="admin-card-value">{{ stats.users_total }}</div>
+    <div class="admin-card-hint">{{ t("admin.ov.users_detail", active=stats.users_active, admins=stats.admins) }}</div>
+  </div>
+  <div class="admin-card">
+    <div class="admin-card-label">{{ t("admin.ov.jobs") }}</div>
+    <div class="admin-card-value">{{ stats.jobs_total }}</div>
+    <div class="admin-card-hint">
+      {% for status, n in stats.jobs_by_status.items() %}<span class="mr-2">{{ t("status." ~ status) }}: {{ n }}</span>{% endfor %}
+    </div>
+  </div>
+  <div class="admin-card">
+    <div class="admin-card-label">{{ t("admin.ov.llm") }}</div>
+    <div class="admin-card-value">{{ stats.llm_24h }}</div>
+    <div class="admin-card-hint">{{ t("admin.ov.llm_detail", d1=stats.llm_24h, d7=stats.llm_7d, d30=stats.llm_30d) }}</div>
+  </div>
+  <div class="admin-card">
+    <div class="admin-card-label">{{ t("admin.ov.cost") }}</div>
+    <div class="admin-card-value">${{ "%.2f"|format(stats.cost_30d) }}</div>
+    <div class="admin-card-hint">{{ t("admin.ov.cost_hint") }}{% if stats.cost_30d_partial %}; {{ t("admin.ov.cost_partial") }}{% endif %}</div>
+  </div>
+</div>
+
+<div class="grid lg:grid-cols-3 gap-6">
+  <section class="admin-panel lg:col-span-2">
+    <h2 class="admin-h2">{{ t("admin.ov.usage") }}</h2>
+    {% for period, rows in [("period_30d", stats.usage_30d), ("period_all", stats.usage_all)] %}
+    <h3 class="text-sm font-medium text-slate-500 mt-3 mb-1">{{ t("admin.ov." ~ period) }}</h3>
+    {% if rows %}
+    <div class="overflow-x-auto"><table class="admin-table">
+      <thead><tr><th>{{ t("admin.col.model") }}</th><th>{{ t("admin.col.calls") }}</th><th>{{ t("admin.col.input") }}</th>
+        <th>{{ t("admin.col.output") }}</th><th>{{ t("admin.col.cost") }}</th></tr></thead>
+      <tbody>{% for r in rows %}<tr><td>{{ r.model }}</td><td>{{ r.calls }}</td><td>{{ "{:,}".format(r.input_tokens) }}</td>
+        <td>{{ "{:,}".format(r.output_tokens) }}</td><td>{{ "%.3f"|format(r.cost) if r.cost is not none else "—" }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    {% else %}<p class="text-sm text-slate-500">{{ t("admin.empty") }}</p>{% endif %}
+    {% endfor %}
+
+    <h2 class="admin-h2 mt-6">{{ t("admin.ov.recent_errors") }} <span class="text-sm font-normal text-slate-500">· {{ t("admin.ov.errors") }}: {{ stats.errors_24h }}</span></h2>
+    {% if stats.recent_errors %}
+    <div class="overflow-x-auto"><table class="admin-table">
+      <thead><tr><th>{{ t("admin.col.time") }}</th><th>{{ t("admin.col.job") }}</th><th>{{ t("admin.col.event") }}</th><th>{{ t("admin.col.message") }}</th></tr></thead>
+      <tbody>{% for e in stats.recent_errors %}<tr><td class="whitespace-nowrap">{{ e.created_at|dt }}</td>
+        <td><a class="text-blue-600 hover:underline" href="/admin/jobs/{{ e.job_id }}">№{{ e.job_id }}</a></td><td>{{ e.event }}</td>
+        <td class="break-words">{{ e.message or "" }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    {% else %}<p class="text-sm text-slate-500">{{ t("admin.empty") }}</p>{% endif %}
+  </section>
+
+  <section class="admin-panel">
+    <h2 class="admin-h2">{{ t("admin.ov.system") }}</h2>
+    <dl class="admin-dl">
+      <dt>{{ t("admin.sys.version") }}</dt><dd>{{ system.version }}</dd>
+      <dt>{{ t("admin.sys.uptime") }}</dt>
+      <dd>{{ t("admin.sys.uptime_value", d=system.uptime_seconds // 86400, h=(system.uptime_seconds % 86400) // 3600, m=(system.uptime_seconds % 3600) // 60) }}</dd>
+      <dt>Python</dt><dd>{{ system.python }}</dd>
+      <dt>{{ t("admin.sys.db_size") }}</dt><dd>{{ system.db_size|human_size }}</dd>
+      <dt>{{ t("admin.sys.uploads") }}</dt><dd>{{ t("admin.sys.uploads_value", files=system.upload_files, size=system.upload_size|human_size) }}</dd>
+      <dt>{{ t("admin.sys.disk") }}</dt><dd>{{ t("admin.sys.disk_value", free=system.disk_free|human_size, total=system.disk_total|human_size) }}</dd>
+      <dt>{{ t("admin.sys.ai") }}</dt><dd>{{ system.provider }} · {{ system.model or "—" }}</dd>
+      <dt>{{ t("admin.sys.key") }}</dt>
+      <dd class="{{ 'text-green-700' if system.key_configured else 'text-red-700' }}">{{ t("admin.sys.key_ok") if system.key_configured else t("admin.sys.key_missing") }}</dd>
+    </dl>
+  </section>
+</div>
+{% endblock %}

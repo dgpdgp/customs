@@ -1,0 +1,30 @@
+{% extends "admin/base.html" %}
+{% block admin_content %}
+<section class="admin-panel">
+  <form method="get" action="/admin/jobs" class="flex flex-wrap items-center gap-2 mb-4">
+    <select name="status_filter" class="admin-input">
+      <option value="">{{ t("admin.jobs.filter_all") }}</option>
+      {% for s in statuses %}<option value="{{ s }}" {{ "selected" if s == status_filter }}>{{ t("status." ~ s) }}</option>{% endfor %}
+    </select>
+    <button class="admin-btn">{{ t("admin.logs.filter") }}</button>
+  </form>
+  {% if jobs %}
+  <div class="overflow-x-auto"><table class="admin-table">
+    <thead><tr><th>{{ t("admin.col.id") }}</th><th>{{ t("admin.col.user") }}</th><th>{{ t("admin.col.status") }}</th>
+      <th>{{ t("admin.col.created") }}</th><th>{{ t("admin.col.files") }}</th><th>{{ t("admin.col.error") }}</th></tr></thead>
+    <tbody>
+    {% for job in jobs %}
+    <tr>
+      <td><a class="text-blue-600 hover:underline" href="/admin/jobs/{{ job.id }}">№{{ job.id }}</a></td>
+      <td>{{ emails.get(job.user_id, "—") }}</td>
+      <td><span class="status-badge status-{{ job.status }}">{{ t("status." ~ job.status) }}</span></td>
+      <td class="whitespace-nowrap">{{ job.created_at|dt }}</td>
+      <td>{{ job.files|length }}</td>
+      <td class="break-words max-w-md">{{ job.error_message or "" }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<p class="text-sm text-slate-500">{{ t("admin.empty") }}</p>{% endif %}
+</section>
+{% endblock %}

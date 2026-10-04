@@ -1,0 +1,29 @@
+{% extends "admin/base.html" %}
+{% block admin_content %}
+<section class="admin-panel mb-6">
+  <h2 class="admin-h2">{{ t("admin.logs.ai") }}</h2>
+  <form method="get" action="/admin/logs" class="flex flex-wrap items-center gap-2 mb-4">
+    <select name="event" class="admin-input">
+      <option value="">{{ t("admin.logs.all_events") }}</option>
+      {% for e in events %}<option value="{{ e }}" {{ "selected" if e == event }}>{{ e }}</option>{% endfor %}
+    </select>
+    <select name="status_filter" class="admin-input">
+      <option value="">{{ t("admin.logs.all_statuses") }}</option>
+      <option value="error" {{ "selected" if status_filter == "error" }}>{{ t("admin.logs.only_errors") }}</option>
+    </select>
+    <button class="admin-btn">{{ t("admin.logs.filter") }}</button>
+  </form>
+  {% include "admin/_log_table.html" %}
+</section>
+
+<section class="admin-panel">
+  <h2 class="admin-h2">{{ t("admin.logs.audit") }}</h2>
+  {% if audit_rows %}
+  <div class="overflow-x-auto"><table class="admin-table">
+    <thead><tr><th>{{ t("admin.col.time") }}</th><th>{{ t("admin.col.user") }}</th><th>{{ t("admin.col.action") }}</th><th>{{ t("admin.col.detail") }}</th></tr></thead>
+    <tbody>{% for a in audit_rows %}<tr><td class="whitespace-nowrap">{{ a.created_at|dt }}</td><td>{{ emails.get(a.user_id, "—") }}</td>
+      <td>{{ a.action }}</td><td class="break-words">{{ a.detail or "" }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+  {% else %}<p class="text-sm text-slate-500">{{ t("admin.empty") }}</p>{% endif %}
+</section>
+{% endblock %}

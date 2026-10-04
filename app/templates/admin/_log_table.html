@@ -1,0 +1,22 @@
+{% if logs %}
+<div class="overflow-x-auto"><table class="admin-table">
+  <thead><tr><th>{{ t("admin.col.time") }}</th><th>{{ t("admin.col.job") }}</th>{% if emails is defined %}<th>{{ t("admin.col.user") }}</th>{% endif %}
+    <th>{{ t("admin.col.event") }}</th><th>{{ t("admin.col.status") }}</th><th>{{ t("admin.col.model") }}</th>
+    <th>{{ t("admin.col.tokens") }}</th><th>{{ t("admin.col.duration") }}</th><th>{{ t("admin.col.message") }}</th></tr></thead>
+  <tbody>
+  {% for log in logs %}
+  <tr class="{{ 'bg-red-50' if log.status == 'error' else '' }}">
+    <td class="whitespace-nowrap">{{ log.created_at|dt }}</td>
+    <td><a class="text-blue-600 hover:underline" href="/admin/jobs/{{ log.job_id }}">№{{ log.job_id }}</a></td>
+    {% if emails is defined %}<td>{{ emails.get(log.user_id, "—") }}</td>{% endif %}
+    <td>{{ log.event }}</td>
+    <td>{{ log.status }}</td>
+    <td>{{ log.model or "" }}</td>
+    <td class="whitespace-nowrap">{% if log.input_tokens is not none %}{{ "{:,}".format(log.input_tokens) }} / {{ "{:,}".format(log.output_tokens or 0) }}{% endif %}</td>
+    <td class="whitespace-nowrap">{% if log.duration_ms is not none %}{{ "%.1f"|format(log.duration_ms / 1000) }} s{% endif %}</td>
+    <td class="break-words max-w-md">{{ log.message or "" }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}<p class="text-sm text-slate-500">{{ t("admin.empty") }}</p>{% endif %}

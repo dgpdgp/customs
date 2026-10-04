@@ -84,3 +84,23 @@ textarea.diff-input { min-height: 3.2rem; resize: vertical; }
 .lang-switch a + a { border-left: 1px solid #cbd5e1; }
 .lang-switch a:hover { background: #f1f5f9; }
 .lang-switch a.is-active { background: #2563eb; color: #fff; }
+
+/* Админ-панель */
+.admin-tabs { display: flex; flex-wrap: wrap; gap: .25rem; }
+.admin-tabs a { padding: .4rem .8rem; border-radius: .375rem; font-size: .875rem; color: #334155; text-decoration: none; }
+.admin-tabs a:hover { background: #e2e8f0; }
+.admin-tabs a.is-active { background: #1e293b; color: #fff; }
+.admin-panel { background: #fff; border: 1px solid #e2e8f0; border-radius: .75rem; padding: 1rem; }
+.admin-h2 { font-weight: 600; margin-bottom: .75rem; }
+.admin-card { background: #fff; border: 1px solid #e2e8f0; border-radius: .75rem; padding: 1rem; }
+.admin-card-label { font-size: .8rem; color: #64748b; }
+.admin-card-value { font-size: 1.75rem; font-weight: 600; margin: .15rem 0; font-variant-numeric: tabular-nums; }
+.admin-card-hint { font-size: .75rem; color: #64748b; }
+.admin-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.admin-table th { text-align: left; font-weight: 500; color: #475569; background: #f8fafc; padding: .45rem .5rem; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
+.admin-table td { padding: .45rem .5rem; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+.admin-dl { display: grid; grid-template-columns: max-content 1fr; gap: .4rem 1rem; font-size: .875rem; }
+.admin-dl dt { color: #64748b; }
+.admin-input { border: 1px solid #cbd5e1; border-radius: .375rem; padding: .3rem .5rem; font-size: .875rem; background: #fff; }
+.admin-btn { border: 1px solid #cbd5e1; border-radius: .375rem; padding: .3rem .6rem; font-size: .8rem; background: #fff; white-space: nowrap; }
+.admin-btn:hover { background: #f1f5f9; }

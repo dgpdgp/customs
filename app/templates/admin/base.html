@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}{{ t("ui.admin") }}{% endblock %}
+{% block content %}
+<div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+  <h1 class="text-2xl font-semibold">{{ t("ui.admin") }}</h1>
+  <nav class="admin-tabs">
+    {% for key, url in [("overview", "/admin"), ("settings", "/admin/settings"), ("users", "/admin/users"),
+                        ("jobs", "/admin/jobs"), ("logs", "/admin/logs")] %}
+    <a href="{{ url }}" class="{{ 'is-active' if tab == key else '' }}">{{ t("admin.tab." ~ key) }}</a>
+    {% endfor %}
+  </nav>
+</div>
+{% if notice %}<p class="mb-4 rounded bg-green-50 text-green-800 px-3 py-2 text-sm">{{ t("admin.ok." ~ notice) }}</p>{% endif %}
+{% if error and not error_key %}<p class="mb-4 rounded bg-red-50 text-red-700 px-3 py-2 text-sm">{{ error }}</p>{% endif %}
+{% block admin_content %}{% endblock %}
+{% endblock %}

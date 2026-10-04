@@ -1,0 +1,60 @@
+{% extends "admin/base.html" %}
+{% block admin_content %}
+<p class="text-sm text-slate-600 mb-4">{{ t("admin.set.intro") }}</p>
+
+<form method="post" action="/admin/check-key" class="admin-panel mb-6 flex flex-wrap items-center gap-3">
+  <input type="hidden" name="csrf" value="{{ csrf_token }}">
+  <button class="rounded-md bg-slate-800 text-white px-4 py-2 text-sm hover:bg-slate-900">{{ t("admin.check.button") }}</button>
+  <span class="text-sm text-slate-500">{{ t("admin.check.hint") }}</span>
+  {% if check_message %}
+  <span class="text-sm font-medium {{ 'text-green-700' if check_ok else 'text-red-700' }}">{{ check_message }}</span>
+  {% endif %}
+</form>
+
+{% for group, rows in groups.items() %}
+<section class="admin-panel mb-6">
+  <h2 class="admin-h2">{{ t("admin.set.group." ~ group) }}</h2>
+  <div class="divide-y divide-slate-100">
+    {% for row in rows %}
+    <div class="py-3 grid md:grid-cols-5 gap-2 items-start" id="setting-{{ row.key }}">
+      <div class="md:col-span-2">
+        <div class="text-sm font-medium">{{ t("admin.key." ~ row.key) }}</div>
+        <div class="text-xs text-slate-500 mt-1">
+          <code>{{ row.key|upper }}</code> ·
+          {% if row.source == "panel" %}<span class="text-blue-700">{{ t("admin.set.source.panel") }}</span>
+            {%- if row.updated_at %} ({{ row.updated_at|dt }}{% if row.updated_by %}, {{ row.updated_by }}{% endif %}){% endif %}
+          {% else %}{{ t("admin.set.source.env") }}{% endif %}
+        </div>
+      </div>
+      <form method="post" action="/admin/settings/{{ row.key }}" class="md:col-span-3 flex flex-wrap items-center gap-2">
+        <input type="hidden" name="csrf" value="{{ csrf_token }}">
+        {% if row.kind == "secret" %}
+          <span class="text-sm font-mono {{ 'text-slate-700' if row.is_set else 'text-red-700' }}">{{ row.value if row.is_set else t("admin.set.not_set") }}</span>
+          <input name="value" type="password" autocomplete="new-password" placeholder="{{ t('admin.set.secret_placeholder') }}" class="admin-input flex-1 min-w-48">
+        {% elif row.kind == "bool" %}
+          <select name="value" class="admin-input">
+            <option value="true" {{ "selected" if row.value }}>{{ t("admin.yes") }}</option>
+            <option value="false" {{ "selected" if not row.value }}>{{ t("admin.no") }}</option>
+          </select>
+        {% elif row.kind == "choice" %}
+          <select name="value" class="admin-input">
+            {% for choice in row.choices %}<option value="{{ choice }}" {{ "selected" if row.value == choice }}>{{ choice }}</option>{% endfor %}
+          </select>
+        {% elif row.kind == "int" %}
+          <input name="value" type="number" min="{{ row.min_value }}" value="{{ row.value }}" class="admin-input w-32">
+        {% else %}
+          <input name="value" type="text" value="{{ row.value }}" class="admin-input flex-1 min-w-48">
+        {% endif %}
+        <button class="rounded-md bg-blue-600 text-white px-3 py-1.5 text-sm hover:bg-blue-700">{{ t("admin.set.save") }}</button>
+        {% if row.source == "panel" %}
+        <button formaction="/admin/settings/{{ row.key }}/reset" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
+                onclick="return confirm({{ t('admin.confirm')|tojson }})">{{ t("admin.set.reset") }}</button>
+        {% endif %}
+        {% if error_key == row.key %}<p class="w-full text-sm text-red-700">{{ error }}</p>{% endif %}
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endfor %}
+{% endblock %}

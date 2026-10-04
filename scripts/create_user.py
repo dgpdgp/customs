@@ -5,6 +5,8 @@
     python scripts/create_user.py user@example.com --name "Иванов И.И."
     python scripts/create_user.py user@example.com --reset-password
     python scripts/create_user.py user@example.com --disable
+    python scripts/create_user.py admin@example.com --admin       # новый администратор
+    python scripts/create_user.py user@example.com --make-admin   # дать права существующему
 
 Пароль запрашивается интерактивно и не попадает в историю команд.
 В Docker: docker compose exec <сервис> python scripts/create_user.py user@example.com
@@ -51,6 +53,9 @@ def main() -> None:
     action = parser.add_mutually_exclusive_group()
     action.add_argument("--reset-password", action="store_true", help="сменить пароль существующего пользователя")
     action.add_argument("--disable", action="store_true", help="заблокировать вход и завершить все сессии")
+    action.add_argument("--make-admin", action="store_true",
+                        help="дать существующему пользователю права администратора")
+    parser.add_argument("--admin", action="store_true", help="создать пользователя сразу администратором")
     args = parser.parse_args()
 
     try:
@@ -60,6 +65,13 @@ def main() -> None:
     init_db()
     with SessionLocal() as db:
         user = db.scalar(select(User).where(User.email == email))
+        if args.make_admin:
+            if user is None:
+                sys.exit(f"Пользователь {email} не найден")
+            user.is_admin = True
+            db.commit()
+            print(f"Пользователь {email} теперь администратор (раздел /admin)")
+            return
         if args.disable or args.reset_password:
             if user is None:
                 sys.exit(f"Пользователь {email} не найден")
@@ -79,10 +91,13 @@ def main() -> None:
         if user is not None:
             sys.exit(f"Пользователь {email} уже существует (смена пароля: --reset-password)")
         try:
-            create_user(db, email, ask_password(), args.name)
+            created = create_user(db, email, ask_password(), args.name)
         except ValueError as exc:
             sys.exit(str(exc))
-        print(f"Пользователь {email} создан")
+        if args.admin:
+            created.is_admin = True
+            db.commit()
+        print(f"Пользователь {email} создан" + (" (администратор)" if created.is_admin else ""))
 
 
 if __name__ == "__main__":

@@ -7,12 +7,36 @@ CREATE TABLE users (
 	password_hash VARCHAR(255) NOT NULL,
 	full_name VARCHAR(255),
 	is_active BOOLEAN NOT NULL,
+	is_admin BOOLEAN DEFAULT '0' NOT NULL,
 	created_at DATETIME NOT NULL,
 	last_login_at DATETIME,
 	PRIMARY KEY (id)
 );
 
 CREATE UNIQUE INDEX ix_users_email ON users (email);
+
+CREATE TABLE admin_audit_log (
+	id INTEGER NOT NULL,
+	user_id INTEGER,
+	action VARCHAR(64) NOT NULL,
+	detail TEXT,
+	created_at DATETIME NOT NULL,
+	PRIMARY KEY (id),
+	FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE SET NULL
+);
+
+CREATE INDEX ix_admin_audit_log_created_at ON admin_audit_log (created_at);
+CREATE INDEX ix_admin_audit_log_user_id ON admin_audit_log (user_id);
+
+CREATE TABLE app_settings (
+	"key" VARCHAR(64) NOT NULL,
+	value TEXT NOT NULL,
+	updated_at DATETIME NOT NULL,
+	updated_by_id INTEGER,
+	PRIMARY KEY ("key"),
+	FOREIGN KEY(updated_by_id) REFERENCES users (id) ON DELETE SET NULL
+);
+
 
 CREATE TABLE declaration_jobs (
 	id INTEGER NOT NULL,

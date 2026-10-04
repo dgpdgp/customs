@@ -32,6 +32,23 @@ def _clean_db():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _restore_runtime_settings():
+    """Админ-панель меняет общий объект настроек — возвращаем его после каждого теста."""
+    from app import runtime_settings
+    from app.config import get_settings
+
+    settings = get_settings()
+    snapshot = {d.key: getattr(settings, d.key) for d in runtime_settings.EDITABLE}
+    admin_emails = settings.admin_emails
+    yield
+    for key, value in snapshot.items():
+        setattr(settings, key, value)
+    settings.admin_emails = admin_emails
+    runtime_settings._baseline.clear()
+    llm._client.cache_clear()
+
+
 @pytest.fixture
 def client():
     with TestClient(app) as test_client:

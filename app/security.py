@@ -6,6 +6,7 @@
 поэтому выход из системы реально отзывает токен.
 """
 
+import hmac
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
@@ -58,7 +59,9 @@ def verify_password(password: str, password_hash: str) -> bool:
 def create_user(db: Session, email: str, password: str, full_name: str | None = None) -> User:
     """Создаёт пользователя. ValueError — слабый пароль или email уже занят."""
     validate_password_strength(password)
-    user = User(email=email.strip().lower(), password_hash=hash_password(password), full_name=full_name or None)
+    email = email.strip().lower()
+    user = User(email=email, password_hash=hash_password(password), full_name=full_name or None,
+                is_admin=email in get_settings().admin_email_set)
     db.add(user)
     try:
         db.commit()
@@ -157,6 +160,32 @@ def require_user_page(request: Request, db: Annotated[Session, Depends(get_db)])
     if resolved is None:
         raise LoginRequired()
     return resolved[0]
+
+
+def require_admin_page(request: Request, db: Annotated[Session, Depends(get_db)]) -> User:
+    """Для админ-панели: не вошёл — на /login, не администратор — 404 (раздел не раскрываем)."""
+    resolved = _resolve_user(request, db)
+    if resolved is None:
+        raise LoginRequired()
+    if not resolved[0].is_admin:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    return resolved[0]
+
+
+# ---------- CSRF для форм админ-панели ----------
+
+def csrf_token(request: Request) -> str:
+    """Токен формы, привязанный к текущей сессии: сторонний сайт не может его знать."""
+    session_token = request.cookies.get(COOKIE_NAME, "")
+    if not session_token:
+        return ""
+    return hmac.new(get_settings().secret_key.encode(), b"csrf:" + session_token.encode(), "sha256").hexdigest()
+
+
+def verify_csrf(request: Request, token: str) -> None:
+    expected = csrf_token(request)
+    if not expected or not hmac.compare_digest(expected, token or ""):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="CSRF")
 
 
 def get_optional_user(request: Request, db: Annotated[Session, Depends(get_db)]) -> User | None:

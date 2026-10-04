@@ -16,6 +16,7 @@
       <a href="/dashboard" class="font-semibold text-slate-900">Customs Assistant</a>
       <div class="flex items-center gap-4 text-sm">
         {% if user %}
+        {% if user.is_admin %}<a href="/admin" class="text-blue-700 hover:underline font-medium">{{ t("ui.admin") }}</a>{% endif %}
         <span class="text-slate-500 hidden sm:inline">{{ user.email }}</span>
         <form method="post" action="/logout">
           <button class="text-slate-600 hover:text-slate-900 underline">{{ t("ui.logout") }}</button>

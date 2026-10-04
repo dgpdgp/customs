@@ -1,9 +1,11 @@
 """ORM-модели (схема БД).
 
-users             — учётные записи декларантов
+users             — учётные записи декларантов (is_admin — доступ к админ-панели)
 user_sessions     — выданные JWT (по jti): позволяет выйти из системы и отозвать токен
 declaration_jobs  — одна «сессия обработки»: загруженные файлы, черновик и утверждённые данные
 generation_logs   — журнал вызовов LLM, валидации и экспорта (аудит, расход токенов)
+app_settings      — настройки и ключи, изменённые в админ-панели (секреты — зашифрованы)
+admin_audit_log   — журнал действий администраторов
 
 DDL для SQLite: docs/schema.sql (генерируется скриптом scripts/dump_schema.py).
 """
@@ -29,6 +31,7 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255))  # bcrypt, пароль в открытом виде не хранится
     full_name: Mapped[str | None] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")  # доступ к /admin
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -106,3 +109,26 @@ class GenerationLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     job: Mapped[DeclarationJob] = relationship(back_populates="logs")
+
+
+class AppSetting(Base):
+    """Значение настройки, заданное в админ-панели (перекрывает значение из .env)."""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text)  # секреты хранятся зашифрованными (app/runtime_settings.py)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    updated_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+
+
+class AdminAuditLog(Base):
+    __tablename__ = "admin_audit_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), index=True)
+    action: Mapped[str] = mapped_column(String(64))  # setting.update, user.block, job.delete ...
+    detail: Mapped[str | None] = mapped_column(Text)  # без значений секретов
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+    user: Mapped[User | None] = relationship()

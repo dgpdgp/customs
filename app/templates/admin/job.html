@@ -1,0 +1,40 @@
+{% extends "admin/base.html" %}
+{% block admin_content %}
+<a href="/admin/jobs" class="text-sm text-blue-600 hover:underline">{{ t("admin.back") }}</a>
+<div class="flex flex-wrap items-center justify-between gap-4 mt-2 mb-4">
+  <h2 class="text-xl font-semibold">{{ t("ui.dash.task", id=job.id) }}
+    <span class="status-badge status-{{ job.status }} align-middle">{{ t("status." ~ job.status) }}</span></h2>
+  <div class="flex flex-wrap gap-2">
+    {% if job.status == "failed" %}
+    <form method="post" action="/admin/jobs/{{ job.id }}/retry">
+      <input type="hidden" name="csrf" value="{{ csrf_token }}">
+      <button class="rounded-md bg-slate-800 text-white px-4 py-2 text-sm hover:bg-slate-900">{{ t("ui.rev.retry") }}</button>
+    </form>
+    {% endif %}
+    {% if job.status != "processing" %}
+    <form method="post" action="/admin/jobs/{{ job.id }}/delete" onsubmit="return confirm({{ t('admin.job.delete_confirm')|tojson }})">
+      <input type="hidden" name="csrf" value="{{ csrf_token }}">
+      <button class="rounded-md bg-red-600 text-white px-4 py-2 text-sm hover:bg-red-700">{{ t("admin.job.delete") }}</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<section class="admin-panel mb-6">
+  <dl class="admin-dl">
+    <dt>{{ t("admin.job.owner") }}</dt><dd>{{ owner.email if owner else "—" }}</dd>
+    <dt>{{ t("admin.col.created") }}</dt><dd>{{ job.created_at|dt }}</dd>
+    <dt>{{ t("admin.job.files") }}</dt>
+    <dd>{% for f in job.files %}<div>{{ t("ui.rev.role." ~ f.role) }}: {{ f.original_name }} ({{ f.size|human_size }})</div>{% endfor %}</dd>
+    <dt>{{ t("admin.job.options") }}</dt><dd><code class="text-xs">{{ job.options|tojson }}</code></dd>
+    <dt>{{ t("admin.job.issues") }}</dt><dd>{{ job.issues|length }}</dd>
+    <dt>{{ t("admin.job.cost") }}</dt><dd>{{ "$%.3f"|format(cost) if cost is not none else "—" }}</dd>
+    {% if job.error_message %}<dt>{{ t("admin.col.error") }}</dt><dd class="text-red-700">{{ job.error_message }}</dd>{% endif %}
+  </dl>
+</section>
+
+<section class="admin-panel">
+  <h2 class="admin-h2">{{ t("admin.job.log") }}</h2>
+  {% include "admin/_log_table.html" %}
+</section>
+{% endblock %}

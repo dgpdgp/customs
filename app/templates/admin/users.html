@@ -1,0 +1,55 @@
+{% extends "admin/base.html" %}
+{% block admin_content %}
+<section class="admin-panel mb-6">
+  <h2 class="admin-h2">{{ t("admin.users.create") }}</h2>
+  <form method="post" action="/admin/users" class="flex flex-wrap items-end gap-3">
+    <input type="hidden" name="csrf" value="{{ csrf_token }}">
+    <label class="text-sm">{{ t("ui.email") }}<br><input name="email" type="email" required class="admin-input w-64"></label>
+    <label class="text-sm">{{ t("admin.col.name") }}<br><input name="full_name" type="text" class="admin-input w-48"></label>
+    <label class="text-sm">{{ t("ui.password") }}<br><input name="password" type="password" required minlength="8" autocomplete="new-password" class="admin-input w-48"></label>
+    <label class="text-sm flex items-center gap-2 pb-2"><input type="checkbox" name="is_admin" value="true"> {{ t("admin.users.is_admin") }}</label>
+    <button class="rounded-md bg-blue-600 text-white px-4 py-2 text-sm hover:bg-blue-700">{{ t("admin.users.create_btn") }}</button>
+  </form>
+</section>
+
+<section class="admin-panel">
+  <h2 class="admin-h2">{{ t("admin.tab.users") }}</h2>
+  <div class="overflow-x-auto"><table class="admin-table">
+    <thead><tr><th>{{ t("admin.col.email") }}</th><th>{{ t("admin.col.name") }}</th><th>{{ t("admin.col.created") }}</th>
+      <th>{{ t("admin.col.last_login") }}</th><th>{{ t("admin.col.jobs") }}</th><th>{{ t("admin.col.status") }}</th>
+      <th>{{ t("admin.col.role") }}</th><th>{{ t("admin.col.actions") }}</th></tr></thead>
+    <tbody>
+    {% for u in users %}
+    <tr>
+      <td>{{ u.email }} {% if u.id == user.id %}<span class="text-slate-400">{{ t("admin.user.you") }}</span>{% endif %}</td>
+      <td>{{ u.full_name or "" }}</td>
+      <td class="whitespace-nowrap">{{ u.created_at|dt }}</td>
+      <td class="whitespace-nowrap">{{ u.last_login_at|dt }}</td>
+      <td>{{ jobs_count.get(u.id, 0) }}</td>
+      <td><span class="{{ 'text-green-700' if u.is_active else 'text-red-700' }}">{{ t("admin.user.active") if u.is_active else t("admin.user.blocked") }}</span></td>
+      <td>{{ t("admin.user.role_admin") if u.is_admin else t("admin.user.role_user") }}</td>
+      <td>
+        <div class="flex flex-wrap gap-2">
+          {% if u.id != user.id %}
+          <form method="post" action="/admin/users/{{ u.id }}/toggle-active" onsubmit="return confirm({{ t('admin.confirm')|tojson }})">
+            <input type="hidden" name="csrf" value="{{ csrf_token }}">
+            <button class="admin-btn">{{ t("admin.user.unblock") if not u.is_active else t("admin.user.block") }}</button>
+          </form>
+          <form method="post" action="/admin/users/{{ u.id }}/toggle-admin" onsubmit="return confirm({{ t('admin.confirm')|tojson }})">
+            <input type="hidden" name="csrf" value="{{ csrf_token }}">
+            <button class="admin-btn">{{ t("admin.user.remove_admin") if u.is_admin else t("admin.user.make_admin") }}</button>
+          </form>
+          {% endif %}
+          <form method="post" action="/admin/users/{{ u.id }}/password" class="flex gap-1">
+            <input type="hidden" name="csrf" value="{{ csrf_token }}">
+            <input name="password" type="password" required minlength="8" autocomplete="new-password" placeholder="{{ t('admin.user.new_password') }}" class="admin-input w-36">
+            <button class="admin-btn">{{ t("admin.user.set_password") }}</button>
+          </form>
+        </div>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endblock %}

@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     # Каждая загрузка — платный вызов LLM с вашего ключа. На публичном сервере
     # закройте регистрацию (REGISTRATION_ENABLED=false и scripts/create_user.py)
     # или ограничьте её списком адресов (ALLOWED_EMAILS=a@x.com,b@y.com).
+    # Администраторы: эти адреса получают доступ к /admin при старте и при регистрации.
+    # Остальных администраторов можно назначить в самой панели.
+    admin_emails: str = ""
     registration_enabled: bool = True
     allowed_emails: str = ""
     # Код приглашения: если задан, зарегистрироваться на сайте может только тот,
@@ -95,6 +98,10 @@ class Settings(BaseSettings):
     @property
     def active_model(self) -> str:
         return self.openai_model if self.llm_provider == "openai" else self.llm_model
+
+    @property
+    def admin_email_set(self) -> set[str]:
+        return {e.strip().lower() for e in self.admin_emails.split(",") if e.strip()}
 
     @property
     def allowed_email_set(self) -> set[str]:
