@@ -54,22 +54,51 @@ customs/
 
 ## Запуск локального сервера
 
-Нужен Python 3.11 или новее (для `anthropic` 1.x требуется ≥ 3.10).
+Нужен Python 3.11 или новее (проект проверен на 3.11). Все команды выполняются **из папки проекта** —
+той, где лежит `requirements.txt`.
 
-```bash
-# 1. Виртуальное окружение и зависимости
+### Windows (Командная строка, cmd)
+
+```bat
+rem 0. Скачать код (нужен Git: https://git-scm.com/download/win)
+rem    Без Git: на GitHub выберите ветку claude/practical-darwin-sqjl21 → Code → Download ZIP,
+rem    распакуйте и перейдите командой cd в папку, где лежит requirements.txt
+git clone -b claude/practical-darwin-sqjl21 https://github.com/dgpdgp/customs.git
+cd customs
+
+rem 1. Виртуальное окружение и зависимости
 python -m venv .venv
-source .venv/bin/activate            # Windows: .venv\Scripts\activate
+.venv\Scripts\activate
 pip install -r requirements.txt
 
-# 2. Настройки
+rem 2. Настройки: создать .env и вписать SECRET_KEY и ANTHROPIC_API_KEY
+copy .env.example .env
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+notepad .env
+
+rem 3. Сервер
+uvicorn app.main:app --reload
+```
+
+После `activate` в начале строки появляется `(.venv)`. В каждом новом окне cmd перед запуском сервера
+снова выполните `cd` в папку проекта и `.venv\Scripts\activate`.
+В PowerShell вместо `activate` используйте `.venv\Scripts\Activate.ps1`.
+
+### macOS / Linux
+
+```bash
+git clone -b claude/practical-darwin-sqjl21 https://github.com/dgpdgp/customs.git
+cd customs
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
 cp .env.example .env
 # В .env заполните:
 #   SECRET_KEY         — python -c "import secrets; print(secrets.token_urlsafe(48))"
 #   ANTHROPIC_API_KEY  — ключ из https://console.anthropic.com
 
-# 3. Сервер (таблицы SQLite создадутся автоматически в data/app.db)
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload       # таблицы SQLite создадутся автоматически в data/app.db
 ```
 
 Откройте http://127.0.0.1:8000 → «Регистрация» → загрузите файлы из `samples/`:
