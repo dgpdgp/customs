@@ -1,25 +1,25 @@
 {% extends "base.html" %}
-{% block title %}Вход{% endblock %}
+{% block title %}{{ t("ui.login.title") }}{% endblock %}
 {% block content %}
 <div class="max-w-sm mx-auto bg-white rounded-xl shadow-sm border border-slate-200 p-8">
-  <h1 class="text-xl font-semibold mb-6">Вход</h1>
+  <h1 class="text-xl font-semibold mb-6">{{ t("ui.login.title") }}</h1>
   {% if error %}<p class="mb-4 rounded bg-red-50 text-red-700 px-3 py-2 text-sm">{{ error }}</p>{% endif %}
   <form method="post" action="/login" class="space-y-4">
     <input type="hidden" name="next" value="{{ next }}">
     <label class="block">
-      <span class="text-sm text-slate-600">Email</span>
+      <span class="text-sm text-slate-600">{{ t("ui.email") }}</span>
       <input name="email" type="email" required autocomplete="email" value="{{ email }}"
              class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
     </label>
     <label class="block">
-      <span class="text-sm text-slate-600">Пароль</span>
+      <span class="text-sm text-slate-600">{{ t("ui.password") }}</span>
       <input name="password" type="password" required autocomplete="current-password"
              class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
     </label>
-    <button class="w-full rounded-md bg-blue-600 text-white py-2 font-medium hover:bg-blue-700">Войти</button>
+    <button class="w-full rounded-md bg-blue-600 text-white py-2 font-medium hover:bg-blue-700">{{ t("ui.login.submit") }}</button>
   </form>
   {% if registration_enabled() %}
-  <p class="mt-6 text-sm text-slate-500">Нет аккаунта? <a href="/register" class="text-blue-600 underline">Регистрация</a></p>
+  <p class="mt-6 text-sm text-slate-500">{{ t("ui.login.no_account") }} <a href="/register" class="text-blue-600 underline">{{ t("ui.register.link") }}</a></p>
   {% endif %}
 </div>
 {% endblock %}

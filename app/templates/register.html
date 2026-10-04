@@ -1,46 +1,44 @@
 {% extends "base.html" %}
-{% block title %}Регистрация{% endblock %}
+{% block title %}{{ t("ui.register.title") }}{% endblock %}
 {% block content %}
 <div class="max-w-sm mx-auto bg-white rounded-xl shadow-sm border border-slate-200 p-8">
-  <h1 class="text-xl font-semibold mb-6">Регистрация</h1>
+  <h1 class="text-xl font-semibold mb-6">{{ t("ui.register.title") }}</h1>
   {% if error %}<p class="mb-4 rounded bg-red-50 text-red-700 px-3 py-2 text-sm">{{ error }}</p>{% endif %}
   {% if not registration_enabled() %}
-  <p class="rounded bg-slate-100 text-slate-700 px-3 py-2 text-sm">
-    Регистрация закрыта. Учётную запись создаёт администратор сервера.
-  </p>
+  <p class="rounded bg-slate-100 text-slate-700 px-3 py-2 text-sm">{{ t("reg.closed") }}</p>
   {% else %}
   <form method="post" action="/register" class="space-y-4">
     {% if invite_required() %}
     <label class="block">
-      <span class="text-sm text-slate-600">Код приглашения</span>
+      <span class="text-sm text-slate-600">{{ t("ui.register.invite") }}</span>
       <input name="invite_code" type="text" required autocomplete="off"
              class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
-      <span class="text-xs text-slate-500">Код выдаёт администратор сайта</span>
+      <span class="text-xs text-slate-500">{{ t("ui.register.invite_hint") }}</span>
     </label>
     {% endif %}
     <label class="block">
-      <span class="text-sm text-slate-600">ФИО (необязательно)</span>
+      <span class="text-sm text-slate-600">{{ t("ui.register.full_name") }}</span>
       <input name="full_name" type="text" autocomplete="name" value="{{ full_name or '' }}"
              class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
     </label>
     <label class="block">
-      <span class="text-sm text-slate-600">Email — будет вашим логином</span>
+      <span class="text-sm text-slate-600">{{ t("ui.register.email") }}</span>
       <input name="email" type="email" required autocomplete="email" value="{{ email }}" placeholder="name@gmail.com"
              class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
     </label>
     <label class="block">
-      <span class="text-sm text-slate-600">Пароль (минимум 8 символов)</span>
+      <span class="text-sm text-slate-600">{{ t("ui.register.password") }}</span>
       <input name="password" type="password" required minlength="8" autocomplete="new-password"
              class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
     </label>
     <label class="block">
-      <span class="text-sm text-slate-600">Повторите пароль</span>
+      <span class="text-sm text-slate-600">{{ t("ui.register.password2") }}</span>
       <input name="password_confirm" type="password" required minlength="8" autocomplete="new-password"
              class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
     </label>
-    <button class="w-full rounded-md bg-blue-600 text-white py-2 font-medium hover:bg-blue-700">Создать аккаунт</button>
+    <button class="w-full rounded-md bg-blue-600 text-white py-2 font-medium hover:bg-blue-700">{{ t("ui.register.submit") }}</button>
   </form>
   {% endif %}
-  <p class="mt-6 text-sm text-slate-500">Уже есть аккаунт? <a href="/login" class="text-blue-600 underline">Войти</a></p>
+  <p class="mt-6 text-sm text-slate-500">{{ t("ui.register.have_account") }} <a href="/login" class="text-blue-600 underline">{{ t("ui.login.submit") }}</a></p>
 </div>
 {% endblock %}

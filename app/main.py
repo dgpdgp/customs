@@ -40,9 +40,13 @@ from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from starlette.datastructures import Headers
+from starlette.requests import cookie_parser
 
+from app import i18n
 from app.config import BASE_DIR, get_settings
 from app.database import get_db, init_db
+from app.i18n import t
 from app.limits import LimitExceeded, LoginThrottle, check_llm_quota, login_throttle
 from app.models import DeclarationJob, GenerationLog, JobStatus, User
 from app.schemas import (
@@ -96,16 +100,44 @@ app = FastAPI(
     openapi_url="/openapi.json" if settings.enable_api_docs else None,
 )
 app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
-templates = Jinja2Templates(directory=APP_DIR / "templates")
+
+
+def _i18n_context(request: Request) -> dict:
+    """Переводы для каждого шаблона: язык берётся из cookie запроса."""
+    lang = i18n.normalize(request.cookies.get(i18n.COOKIE_NAME))
+    return {
+        "lang": lang,
+        "languages": i18n.LANGUAGES,
+        "language_short": i18n.LANGUAGE_SHORT,
+        "t": lambda key, **params: i18n.t(key, lang, **params),
+        "js_i18n": i18n.js_messages(lang),
+    }
+
+
+templates = Jinja2Templates(directory=APP_DIR / "templates", context_processors=[_i18n_context])
 templates.env.globals["registration_enabled"] = lambda: settings.registration_enabled
 templates.env.globals["invite_required"] = lambda: settings.invite_required
-templates.env.globals["STATUS_LABELS"] = {
-    JobStatus.PROCESSING: "обработка",
-    JobStatus.REVIEW: "на проверке",
-    JobStatus.APPROVED: "утверждено",
-    JobStatus.EXPORTED: "выгружено",
-    JobStatus.FAILED: "ошибка",
-}
+
+
+class LanguageMiddleware:
+    """Выставляет язык запроса (из cookie) для сообщений, формируемых в коде."""
+
+    def __init__(self, asgi_app) -> None:
+        self.app = asgi_app
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        cookies = cookie_parser(Headers(scope=scope).get("cookie", ""))
+        token = i18n.set_lang(cookies.get(i18n.COOKIE_NAME))
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            i18n.reset_lang(token)
+
+
+app.add_middleware(LanguageMiddleware)
 
 DbSession = Annotated[Session, Depends(get_db)]
 PageUser = Annotated[User, Depends(require_user_page)]
@@ -153,13 +185,13 @@ def _register_user(
     db: Session, email: str, password: str, full_name: str | None, invite_code: str | None = None
 ) -> User:
     if not settings.can_register(email):
-        raise RegistrationClosed("Регистрация закрыта. Учётную запись создаёт администратор сервера.")
+        raise RegistrationClosed(t("reg.closed"))
     if settings.invite_required:
         # Перебор кода ограничен общим счётчиком неудачных попыток (LimitExceeded)
         register_throttle.check(INVITE_THROTTLE_KEY)
         if not settings.invite_code_valid(invite_code):
             register_throttle.record_failure(INVITE_THROTTLE_KEY)
-            raise RegistrationClosed("Неверный код приглашения. Узнайте его у администратора сайта.")
+            raise RegistrationClosed(t("reg.bad_invite"))
     return create_user(db, email, password, full_name)
 
 
@@ -178,7 +210,7 @@ def _get_job(db: Session, user: User, job_id: int) -> DeclarationJob:
     job = db.get(DeclarationJob, job_id)
     # Чужие задачи отдаём как 404, чтобы не раскрывать факт их существования.
     if job is None or job.user_id != user.id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Задача не найдена")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, t("job.not_found"))
     return job
 
 
@@ -187,8 +219,8 @@ def _save_upload(upload: UploadFile, dest_dir: Path, role: str, allowed: set[str
     original_name = Path(upload.filename or "").name  # отбрасываем путь, если браузер его прислал
     ext = Path(original_name).suffix.lower()
     if ext not in allowed:
-        raise ValueError(f"Файл «{original_name}»: формат {ext or 'без расширения'} не подходит. "
-                         f"Допустимо: {', '.join(sorted(allowed))}")
+        raise ValueError(t("upload.bad_ext", name=original_name, ext=ext or t("upload.no_ext"),
+                           allowed=", ".join(sorted(allowed))))
     dest = dest_dir / f"{role}_{uuid.uuid4().hex}{ext}"
     size = 0
     with dest.open("wb") as out:
@@ -197,11 +229,11 @@ def _save_upload(upload: UploadFile, dest_dir: Path, role: str, allowed: set[str
             if size > settings.max_upload_bytes:
                 out.close()
                 dest.unlink(missing_ok=True)
-                raise ValueError(f"Файл «{original_name}» больше {settings.max_upload_mb} МБ")
+                raise ValueError(t("upload.too_big", name=original_name, mb=settings.max_upload_mb))
             out.write(chunk)
     if size == 0:
         dest.unlink(missing_ok=True)
-        raise ValueError(f"Файл «{original_name}» пустой")
+        raise ValueError(t("upload.empty", name=original_name))
     return {"role": role, "original_name": original_name, "stored_path": str(dest), "size": size}
 
 
@@ -222,6 +254,15 @@ def _job_payload(job: DeclarationJob) -> dict:
 
 def _attachment_header(filename: str) -> dict[str, str]:
     return {"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"}
+
+
+@app.get("/lang/{code}", include_in_schema=False)
+def switch_language(code: str, next: str | None = None) -> RedirectResponse:
+    """Переключатель языка в шапке: запоминаем выбор в cookie на год."""
+    response = RedirectResponse(_safe_next(next), status_code=status.HTTP_303_SEE_OTHER)
+    response.set_cookie(i18n.COOKIE_NAME, i18n.normalize(code), max_age=365 * 24 * 3600, samesite="lax",
+                        secure=settings.cookie_secure)
+    return response
 
 
 @app.get("/healthz", include_in_schema=False)
@@ -260,12 +301,12 @@ def register_submit(
         )
 
     if password != password_confirm:
-        return fail("Пароли не совпадают")
+        return fail(t("reg.pw_mismatch"))
     try:
         data = RegisterRequest(email=email, password=password, full_name=full_name or None, invite_code=invite_code)
         user = _register_user(db, data.email, data.password, data.full_name, data.invite_code)
     except ValidationError:
-        return fail("Некорректный email: введите адрес почты целиком, например name@gmail.com")
+        return fail(t("reg.bad_email"))
     except LimitExceeded as exc:
         return fail(str(exc), status.HTTP_429_TOO_MANY_REQUESTS)
     except ValueError as exc:
@@ -299,7 +340,7 @@ def login_submit(
     except LimitExceeded as exc:
         return fail(str(exc), status.HTTP_429_TOO_MANY_REQUESTS)
     if user is None:
-        return fail("Неверный email или пароль", status.HTTP_401_UNAUTHORIZED)
+        return fail(t("login.failed"), status.HTTP_401_UNAUTHORIZED)
     response = RedirectResponse(_safe_next(next), status_code=status.HTTP_303_SEE_OTHER)
     _set_auth_cookie(response, create_session_token(db, user, request))
     return response
@@ -356,17 +397,19 @@ def upload_documents(
     """Принимает файлы, создаёт задачу и запускает обработку в фоне."""
     commercial_files = [f for f in commercial_files if f.filename]
     if not reference_file.filename:
-        return _render_dashboard(request, db, user, "Загрузите эталонную декларацию", 400)
+        return _render_dashboard(request, db, user, t("upload.no_reference"), 400)
     if not commercial_files:
-        return _render_dashboard(request, db, user, "Загрузите хотя бы один инвойс или упаковочный лист", 400)
+        return _render_dashboard(request, db, user, t("upload.no_commercial"), 400)
     if len(commercial_files) > MAX_COMMERCIAL_FILES:
-        return _render_dashboard(request, db, user, f"Не больше {MAX_COMMERCIAL_FILES} коммерческих документов", 400)
+        return _render_dashboard(request, db, user, t("upload.too_many", n=MAX_COMMERCIAL_FILES), 400)
     try:
         check_llm_quota(db, user.id)
     except LimitExceeded as exc:
         return _render_dashboard(request, db, user, str(exc), status.HTTP_429_TOO_MANY_REQUESTS)
 
-    job = DeclarationJob(user_id=user.id, status=JobStatus.PROCESSING, options={"group_by_hs": group_by_hs})
+    # Язык сохраняем в задаче: на нём фоновая обработка напишет ошибки и замечания
+    job = DeclarationJob(user_id=user.id, status=JobStatus.PROCESSING,
+                         options={"group_by_hs": group_by_hs, "lang": i18n.get_lang()})
     db.add(job)
     db.commit()
 
@@ -400,7 +443,7 @@ def export_file(job_id: int, db: DbSession, user: PageUser) -> Response:
     """Подставляет утверждённые данные в шаблон пользователя и отдаёт файл."""
     job = _get_job(db, user, job_id)
     if job.status not in (JobStatus.APPROVED, JobStatus.EXPORTED) or job.approved_data is None:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Сначала проверьте и утвердите данные")
+        raise HTTPException(status.HTTP_409_CONFLICT, t("job.approve_first"))
 
     template = job.file_by_role("template")
     template_path = Path(template[0]["stored_path"]) if template else None
@@ -423,7 +466,7 @@ def export_file(job_id: int, db: DbSession, user: PageUser) -> Response:
 def export_json(job_id: int, db: DbSession, user: PageUser) -> Response:
     job = _get_job(db, user, job_id)
     if job.approved_data is None:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Сначала проверьте и утвердите данные")
+        raise HTTPException(status.HTTP_409_CONFLICT, t("job.approve_first"))
     content = json.dumps(job.approved_data, ensure_ascii=False, indent=2).encode()
     return Response(content, media_type="application/json",
                     headers=_attachment_header(f"declaration_{job.id}.json"))
@@ -453,7 +496,7 @@ def api_login(body: LoginRequest, request: Request, db: DbSession):
     except LimitExceeded as exc:
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, str(exc)) from exc
     if user is None:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Неверный email или пароль")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, t("login.failed"))
     return TokenResponse(access_token=create_session_token(db, user, request))
 
 
@@ -487,7 +530,7 @@ def api_approve(job_id: int, body: ApproveRequest, db: DbSession, user: ApiUser)
     """Сохраняет данные, проверенные (и при необходимости исправленные) декларантом."""
     job = _get_job(db, user, job_id)
     if job.status not in (JobStatus.REVIEW, JobStatus.APPROVED, JobStatus.EXPORTED):
-        raise HTTPException(status.HTTP_409_CONFLICT, "Задача ещё не готова к утверждению")
+        raise HTTPException(status.HTTP_409_CONFLICT, t("job.not_ready"))
 
     reference = DeclarationData.model_validate(job.reference_data)
     issues = validation.run_structural(reference, body.data, settings.hs_code_length)
@@ -509,7 +552,7 @@ def api_retry(job_id: int, background_tasks: BackgroundTasks, db: DbSession, use
     """Повторная обработка (например, после временной ошибки LLM API)."""
     job = _get_job(db, user, job_id)
     if job.status != JobStatus.FAILED:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Повторить можно только задачу с ошибкой")
+        raise HTTPException(status.HTTP_409_CONFLICT, t("job.retry_only_failed"))
     try:
         check_llm_quota(db, user.id)
     except LimitExceeded as exc:

@@ -18,56 +18,71 @@
 (function (root) {
   "use strict";
 
+  // ---------- Переводы ----------
+
+  /**
+   * Перевод по ключу из window.I18N (его выводит сервер в base.html на языке
+   * пользователя). Без словаря (например, в тестах Node) возвращается сам ключ.
+   */
+  function translate(key, vars) {
+    const dict = (root && root.I18N) || {};
+    let text = dict[key] || key;
+    for (const [name, value] of Object.entries(vars || {})) text = text.split(`{${name}}`).join(String(value));
+    return text;
+  }
+
   // ---------- Описание полей ----------
 
-  const PARTY_FIELDS = [["name", "наименование"], ["address", "адрес"], ["country", "страна"], ["tax_id", "ИНН / TIN"]];
-  const partyFields = (key, title) => PARTY_FIELDS.map(([f, l]) => [`${key}.${f}`, `${title}: ${l}`, "text"]);
+  const PARTY_FIELDS = ["name", "address", "country", "tax_id"];
+  const partyFields = (key) =>
+    PARTY_FIELDS.map((f) => [`${key}.${f}`, `${translate(`party.${key}`)}: ${translate(`pfield.${f}`)}`, "text"]);
+  const field = (path, type = "text") => [path, translate(`field.${path}`), type];
 
   const HEADER_FIELDS = [
-    ["declaration_type", "Тип декларации", "text"],
-    ["customs_office", "Таможенный пост", "text"],
-    ...partyFields("exporter", "Отправитель"),
-    ...partyFields("importer", "Получатель"),
-    ...partyFields("declarant", "Декларант / брокер"),
-    ["contract_number", "Контракт №", "text"],
-    ["contract_date", "Дата контракта", "text"],
-    ["delivery_terms", "Инкотермс", "text"],
-    ["delivery_place", "Пункт поставки", "text"],
-    ["currency", "Валюта", "text"],
-    ["country_of_dispatch", "Страна отправления", "text"],
-    ["country_of_destination", "Страна назначения", "text"],
-    ["transport_mode", "Вид транспорта", "text"],
+    field("declaration_type"),
+    field("customs_office"),
+    ...partyFields("exporter"),
+    ...partyFields("importer"),
+    ...partyFields("declarant"),
+    field("contract_number"),
+    field("contract_date"),
+    field("delivery_terms"),
+    field("delivery_place"),
+    field("currency"),
+    field("country_of_dispatch"),
+    field("country_of_destination"),
+    field("transport_mode"),
   ];
 
   const SHIPMENT_FIELDS = [
-    ["invoice_numbers", "Инвойсы", "list"],
-    ["invoice_date", "Дата инвойса", "text"],
-    ["transport_document", "Транспортный документ", "text"],
-    ["vehicle_id", "Номер ТС", "text"],
-    ["total_invoice_value", "Сумма по инвойсу", "number"],
-    ["total_packages", "Мест всего", "int"],
-    ["total_gross_weight_kg", "Брутто итого, кг", "number"],
-    ["total_net_weight_kg", "Нетто итого, кг", "number"],
+    field("invoice_numbers", "list"),
+    field("invoice_date"),
+    field("transport_document"),
+    field("vehicle_id"),
+    field("total_invoice_value", "number"),
+    field("total_packages", "int"),
+    field("total_gross_weight_kg", "number"),
+    field("total_net_weight_kg", "number"),
   ];
 
   const ITEM_FIELDS = [
-    ["description", "Описание", "text"],
-    ["article", "Артикул", "text"],
-    ["hs_code", "Код ТН ВЭД", "text"],
-    ["country_of_origin", "Страна происхождения", "text"],
-    ["quantity", "Количество", "number"],
-    ["unit", "Единица", "text"],
-    ["packages", "Мест", "int"],
-    ["gross_weight_kg", "Брутто, кг", "number"],
-    ["net_weight_kg", "Нетто, кг", "number"],
-    ["unit_price", "Цена за ед.", "number"],
-    ["total_value", "Стоимость", "number"],
+    field("description"),
+    field("article"),
+    field("hs_code"),
+    field("country_of_origin"),
+    field("quantity", "number"),
+    field("unit"),
+    field("packages", "int"),
+    field("gross_weight_kg", "number"),
+    field("net_weight_kg", "number"),
+    field("unit_price", "number"),
+    field("total_value", "number"),
   ];
 
   const HS_BASIS_LABELS = {
-    document: "код из документа",
-    reference_match: "код по эталону",
-    not_found: "код не найден",
+    document: translate("js.basis.document"),
+    reference_match: translate("js.basis.reference_match"),
+    not_found: translate("js.basis.not_found"),
   };
 
   // ---------- Чистые функции ----------
@@ -224,7 +239,7 @@
 
   function allSameNote(tbody) {
     const tr = el("tr", "diff-all-same");
-    const td = el("td", "", "Изменений нет — все значения совпадают с эталоном");
+    const td = el("td", "", translate("js.all_same"));
     td.colSpan = 3;
     tr.append(td);
     tbody.append(tr);
@@ -239,8 +254,8 @@
     const table = el("table", "diff-table");
     const thead = el("thead");
     const tr = el("tr");
-    tr.append(el("th", "diff-col-label", "Поле"), el("th", "diff-col-old", "Эталон (старая декларация)"),
-      el("th", "diff-col-new", "Новая декларация"));
+    tr.append(el("th", "diff-col-label", translate("js.col.field")),
+      el("th", "diff-col-old", translate("js.col.old")), el("th", "diff-col-new", translate("js.col.new")));
     thead.append(tr);
     const tbody = el("tbody");
     table.append(thead, tbody);
@@ -303,13 +318,13 @@
     const warnings = (issues || []).filter((i) => i.severity === "warning").length;
     const chips = [
       [summary.headerChanged === 0 ? "ok" : "bad",
-        summary.headerChanged === 0 ? "Реквизиты совпадают с эталоном" : `Изменено реквизитов: ${summary.headerChanged}`],
-      ["info", `Изменено полей поставки: ${summary.shipmentChanged}`],
-      ["info", `Позиций сопоставлено с эталоном: ${summary.itemsMatched}`],
-      [summary.itemsNew ? "warn" : "info", `Новых позиций без аналога в эталоне: ${summary.itemsNew}`],
-      ["info", `Позиций эталона нет в поставке: ${summary.itemsRemoved}`],
-      [errors ? "bad" : "ok", `Ошибок: ${errors}`],
-      [warnings ? "warn" : "ok", `Предупреждений: ${warnings}`],
+        summary.headerChanged === 0 ? translate("js.chip.header_ok") : translate("js.chip.header_changed", { n: summary.headerChanged })],
+      ["info", translate("js.chip.shipment", { n: summary.shipmentChanged })],
+      ["info", translate("js.chip.matched", { n: summary.itemsMatched })],
+      [summary.itemsNew ? "warn" : "info", translate("js.chip.new", { n: summary.itemsNew })],
+      ["info", translate("js.chip.removed", { n: summary.itemsRemoved })],
+      [errors ? "bad" : "ok", translate("js.chip.errors", { n: errors })],
+      [warnings ? "warn" : "ok", translate("js.chip.warnings", { n: warnings })],
     ];
     for (const [tone, text] of chips) container.append(el("span", `diff-chip diff-chip-${tone}`, text));
   }
@@ -346,7 +361,7 @@
     container.replaceChildren();
 
     // 1. Постоянные реквизиты: должны совпадать
-    const head = sectionTable("Реквизиты и условия поставки", "Переносятся из эталона и должны совпадать полностью");
+    const head = sectionTable(translate("js.sec.header"), translate("js.sec.header_sub"));
     for (const cell of diff.header) {
       head.tbody.append(fieldRow(cell, {
         target: proposed.header, constant: true, editable, onEdit,
@@ -357,7 +372,7 @@
     container.append(head.section);
 
     // 2. Данные поставки: ожидаемо меняются
-    const ship = sectionTable("Данные поставки", "Берутся из новых инвойсов и упаковочных листов");
+    const ship = sectionTable(translate("js.sec.shipment"), translate("js.sec.shipment_sub"));
     for (const cell of diff.shipment) {
       ship.tbody.append(fieldRow(cell, {
         target: proposed.shipment, editable, onEdit,
@@ -368,20 +383,20 @@
     container.append(ship.section);
 
     // 3. Товарные позиции
-    const goods = sectionTable("Товарные позиции", "Слева — сопоставленная позиция эталона (тот же товар), справа — новая позиция");
+    const goods = sectionTable(translate("js.sec.items"), translate("js.sec.items_sub"));
     for (const row of diff.items) {
       const titleRow = el("tr", `diff-item-title diff-item-${row.kind}`);
       const titleTd = el("td");
       titleTd.colSpan = 3;
       const title = row.kind === "removed"
-        ? `Позиция эталона №${row.ref.item_no} — нет в новой поставке`
+        ? translate("js.item.removed", { ref: row.ref.item_no })
         : row.kind === "matched"
-          ? `Позиция №${row.cur.item_no} ↔ позиция эталона №${row.ref.item_no}`
-          : `Позиция №${row.cur.item_no} — новый товар, аналога в эталоне нет`;
+          ? translate("js.item.matched", { cur: row.cur.item_no, ref: row.ref.item_no })
+          : translate("js.item.new", { cur: row.cur.item_no });
       titleTd.append(el("strong", "", title));
       if (row.cur && row.cur.source_document) {
         const quote = row.cur.source_quote ? ` — «${row.cur.source_quote}»` : "";
-        titleTd.append(el("div", "diff-source", `Источник: ${row.cur.source_document}${quote}`));
+        titleTd.append(el("div", "diff-source", `${translate("js.source")}: ${row.cur.source_document}${quote}`));
       }
       if (row.cur) {
         // Замечания к позиции в целом и к полям, которых нет в таблице (источник, сопоставление)
@@ -409,7 +424,7 @@
           const original = { text: extra.textContent, className: extra.className, value: cell.newValue };
           tr.addEventListener("diff-edit", (event) => {
             const manual = normalize(event.detail.value) !== normalize(original.value);
-            extra.textContent = manual ? "введён вручную" : original.text;
+            extra.textContent = manual ? translate("js.basis.manual") : original.text;
             extra.className = manual ? "diff-basis diff-basis-manual" : original.className;
           });
         }
@@ -422,9 +437,10 @@
     const orphan = (issues || []).filter((issue) => !renderedKeys.has(`${issue.item_no ?? ""}|${issue.field ?? ""}`));
     if (orphan.length) {
       const box = el("section", "diff-section");
-      box.append(el("h2", "diff-section-title", "Общие замечания"));
+      box.append(el("h2", "diff-section-title", translate("js.sec.general")));
       for (const issue of orphan) {
-        const where = [issue.item_no != null ? `позиция №${issue.item_no}` : "", issue.field || ""].filter(Boolean);
+        const where = [issue.item_no != null ? translate("js.item_no", { n: issue.item_no }) : "", issue.field || ""]
+          .filter(Boolean);
         const prefix = where.length ? `${where.join(", ")}: ` : "";
         box.append(el("div", `diff-issue diff-issue-${issue.severity}`, prefix + issue.message));
       }
@@ -436,7 +452,7 @@
   }
 
   const api = {
-    HEADER_FIELDS, SHIPMENT_FIELDS, ITEM_FIELDS,
+    HEADER_FIELDS, SHIPMENT_FIELDS, ITEM_FIELDS, translate,
     getPath, setPath, normalize, compareValues, alignItems, buildDiff, parseInput, formatValue, formatDelta,
     renderDiffView,
   };

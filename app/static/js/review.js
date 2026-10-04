@@ -8,9 +8,7 @@
   const jobId = root.dataset.jobId;
   const $ = (id) => document.getElementById(id);
   const STATES = ["processing", "failed", "review"];
-  const STATUS_LABELS = {
-    processing: "обработка", review: "на проверке", approved: "утверждено", exported: "выгружено", failed: "ошибка",
-  };
+  const tr = DiffView.translate; // переводы из window.I18N (см. diff.js)
   let working = null; // редактируемая копия черновика
   let job = null;
 
@@ -20,7 +18,7 @@
 
   function setStatusBadge(status) {
     const badge = $("job-status");
-    badge.textContent = STATUS_LABELS[status] || status;
+    badge.textContent = tr(`status.${status}`);
     badge.className = `status-badge status-${status}`;
   }
 
@@ -35,7 +33,7 @@
       throw new Error("unauthorized");
     }
     const body = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(formatError(body.detail) || `Ошибка ${response.status}`);
+    if (!response.ok) throw new Error(formatError(body.detail) || tr("js.error_status", { status: response.status }));
     return body;
   }
 
@@ -51,7 +49,8 @@
     for (const issue of issues) {
       const div = document.createElement("div");
       div.className = `diff-issue diff-issue-${issue.severity}`;
-      const where = [issue.item_no != null ? `позиция №${issue.item_no}` : "", issue.field || ""].filter(Boolean);
+      const where = [issue.item_no != null ? tr("js.item_no", { n: issue.item_no }) : "", issue.field || ""]
+        .filter(Boolean);
       div.textContent = (where.length ? `${where.join(", ")}: ` : "") + issue.message;
       container.append(div);
     }
@@ -70,8 +69,8 @@
       onValidityChange: (hasInvalid) => {
         $("approve-btn").disabled = hasInvalid;
         $("approve-hint").textContent = hasInvalid
-          ? "Исправьте некорректные числовые значения (выделены красной рамкой)."
-          : "Проверьте подсвеченные поля. Значения справа можно исправить перед подтверждением.";
+          ? tr("js.invalid_numbers")
+          : tr("ui.rev.approve_hint");
       },
     });
     if (job.status === "approved" || job.status === "exported") $("state-approved").classList.remove("hidden");
@@ -90,7 +89,7 @@
       setTimeout(poll, 2000);
     } else if (job.status === "failed") {
       showState("failed");
-      $("error-message").textContent = job.error_message || "Неизвестная ошибка";
+      $("error-message").textContent = job.error_message || tr("js.unknown_error");
     } else {
       renderReview();
     }
@@ -98,7 +97,7 @@
 
   $("approve-btn").addEventListener("click", async () => {
     const errors = (job.issues || []).filter((i) => i.severity === "error").length;
-    const question = `Замечаний с уровнем «ошибка»: ${errors}. Вы проверили их и подтверждаете данные?`;
+    const question = tr("js.confirm_errors", { n: errors });
     if (errors && !confirm(question)) {
       return;
     }
@@ -113,7 +112,7 @@
       $("state-approved").classList.remove("hidden");
       $("state-approved").scrollIntoView({ behavior: "smooth" });
     } catch (error) {
-      alert(`Не удалось сохранить: ${error.message}`);
+      alert(tr("js.save_failed", { error: error.message }));
     } finally {
       button.disabled = false;
     }

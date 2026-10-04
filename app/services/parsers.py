@@ -14,6 +14,8 @@ import pdfplumber
 from defusedxml import ElementTree as SafeET
 from pypdf import PdfReader
 
+from app.i18n import t
+
 logger = logging.getLogger(__name__)
 
 PDF_EXTENSIONS = {".pdf"}
@@ -56,8 +58,8 @@ def parse_file(path: Path, display_name: str) -> ParsedDocument:
         raise
     except Exception as exc:  # повреждённый файл, неподдерживаемая кодировка и т. п.
         logger.exception("Не удалось разобрать %s", display_name)
-        raise ParseError(f"Не удалось прочитать файл «{display_name}»: {exc}") from exc
-    raise ParseError(f"Формат файла «{display_name}» не поддерживается")
+        raise ParseError(t("parse.read_failed", name=display_name, error=exc)) from exc
+    raise ParseError(t("parse.unsupported", name=display_name))
 
 
 # ---------- PDF ----------
@@ -143,7 +145,7 @@ def _parse_xml(path: Path, name: str) -> ParsedDocument:
     try:
         SafeET.fromstring(raw)
     except SafeET.ParseError as exc:
-        raise ParseError(f"Файл «{name}» не является корректным XML: {exc}") from exc
+        raise ParseError(t("parse.bad_xml", name=name, error=exc)) from exc
     # LLM хорошо читает XML как есть — передаём исходный текст без преобразований.
     return ParsedDocument(name, "xml", _decode(raw))
 

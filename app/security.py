@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import get_db
+from app.i18n import t
 from app.models import User, UserSession
 
 ALGORITHM = "HS256"
@@ -38,9 +39,9 @@ class LoginRequired(Exception):
 
 def validate_password_strength(password: str) -> None:
     if len(password) < 8:
-        raise ValueError("Пароль должен быть не короче 8 символов")
+        raise ValueError(t("auth.pw_short"))
     if len(password.encode()) > BCRYPT_MAX_BYTES:
-        raise ValueError("Пароль слишком длинный (максимум 72 байта)")
+        raise ValueError(t("auth.pw_long"))
 
 
 def hash_password(password: str) -> str:
@@ -63,7 +64,7 @@ def create_user(db: Session, email: str, password: str, full_name: str | None = 
         db.commit()
     except IntegrityError:
         db.rollback()
-        raise ValueError("Пользователь с таким email уже зарегистрирован") from None
+        raise ValueError(t("auth.email_taken")) from None
     db.refresh(user)
     return user
 
@@ -144,7 +145,7 @@ def get_current_user(request: Request, db: Annotated[Session, Depends(get_db)]) 
     if resolved is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Требуется авторизация",
+            detail=t("auth.required"),
             headers={"WWW-Authenticate": "Bearer"},
         )
     return resolved[0]

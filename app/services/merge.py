@@ -7,6 +7,7 @@
 from collections import OrderedDict
 from decimal import Decimal
 
+from app.i18n import t
 from app.schemas import DeclarationData, GoodsItem, Issue, LLMExtractionResult
 
 
@@ -74,8 +75,7 @@ def group_items_by_hs_code(items: list[GoodsItem]) -> tuple[list[GoodsItem], dic
         same_unit = len(units) == 1
         if not same_unit:
             issues.append(Issue(severity="warning", item_no=new_no, field="quantity", source="validator",
-                                message=f"Объединены позиции с разными единицами ({', '.join(map(str, units))}) — "
-                                        "количество не суммировано, укажите вручную"))
+                                message=t("merge.units_differ", units=", ".join(map(str, units)))))
         descriptions = list(OrderedDict.fromkeys(m.description for m in members if m.description))
         articles = list(OrderedDict.fromkeys(m.article for m in members if m.article))
         grouped.append(
@@ -99,5 +99,5 @@ def group_items_by_hs_code(items: list[GoodsItem]) -> tuple[list[GoodsItem], dic
             )
         )
         issues.append(Issue(severity="info", item_no=new_no, source="validator",
-                            message="Объединены исходные позиции №" + ", ".join(str(m.item_no) for m in members)))
+                            message=t("merge.merged", nos=", ".join(str(m.item_no) for m in members))))
     return grouped, mapping, issues

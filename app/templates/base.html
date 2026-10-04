@@ -1,25 +1,34 @@
 <!doctype html>
-<html lang="ru">
+<html lang="{{ lang }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Декларант{% endblock %} · Customs Assistant</title>
+  <title>{% block title %}{{ t("ui.dash.title") }}{% endblock %} · Customs Assistant</title>
   <!-- Tailwind Play CDN — удобно для MVP; для продакшена собрать CSS через Tailwind CLI -->
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="{{ url_for('static', path='css/app.css') }}">
+  <!-- Переводы для JavaScript (экран сравнения, страница задачи) -->
+  <script>window.I18N = {{ js_i18n|tojson }}; window.LANG = {{ lang|tojson }};</script>
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen">
   <header class="bg-white border-b border-slate-200">
-    <div class="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
+    <div class="max-w-7xl mx-auto px-4 min-h-14 py-2 flex flex-wrap items-center justify-between gap-3">
       <a href="/dashboard" class="font-semibold text-slate-900">Customs Assistant</a>
-      {% if user %}
       <div class="flex items-center gap-4 text-sm">
-        <span class="text-slate-500">{{ user.email }}</span>
+        {% if user %}
+        <span class="text-slate-500 hidden sm:inline">{{ user.email }}</span>
         <form method="post" action="/logout">
-          <button class="text-slate-600 hover:text-slate-900 underline">Выйти</button>
+          <button class="text-slate-600 hover:text-slate-900 underline">{{ t("ui.logout") }}</button>
         </form>
+        {% endif %}
+        <nav class="lang-switch" aria-label="{{ t('ui.language') }}">
+          {% for code, name in languages.items() %}
+          <a href="/lang/{{ code }}?next={{ request.url.path|urlencode }}" title="{{ name }}" lang="{{ code }}"
+             class="{{ 'is-active' if code == lang else '' }}"
+             {% if code == lang %}aria-current="true"{% endif %}>{{ language_short[code] }}</a>
+          {% endfor %}
+        </nav>
       </div>
-      {% endif %}
     </div>
   </header>
   <main class="max-w-7xl mx-auto px-4 py-8">

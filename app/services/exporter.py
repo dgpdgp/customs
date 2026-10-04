@@ -26,6 +26,7 @@ from jinja2.sandbox import SandboxedEnvironment
 from openpyxl import load_workbook
 from openpyxl.cell.cell import MergedCell
 
+from app.i18n import t
 from app.schemas import DeclarationData
 
 DEFAULT_TEMPLATE = Path(__file__).resolve().parent.parent / "export_templates" / "default_declaration.xml"
@@ -79,8 +80,8 @@ def render_export(data: DeclarationData, template_path: Path | None, base_name: 
         if ext in {".xlsx", ".xlsm"}:
             return _render_xlsx(path, data), f"{base_name}.xlsx", XLSX_MEDIA_TYPE
     except TemplateError as exc:
-        raise TemplateRenderError(f"Ошибка в шаблоне: {exc}") from exc
-    raise TemplateRenderError(f"Шаблоны формата {ext} не поддерживаются (нужен .xml, .txt, .csv или .xlsx)")
+        raise TemplateRenderError(t("export.template_error", error=exc)) from exc
+    raise TemplateRenderError(t("export.unsupported", ext=ext))
 
 
 def _render_text(path: Path, data: DeclarationData) -> bytes:

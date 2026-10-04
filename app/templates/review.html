@@ -1,32 +1,32 @@
 {% extends "base.html" %}
-{% block title %}Задача №{{ job.id }}{% endblock %}
+{% block title %}{{ t("ui.dash.task", id=job.id) }}{% endblock %}
 {% block content %}
 <div id="review-root" data-job-id="{{ job.id }}">
   <div class="flex flex-wrap items-start justify-between gap-4 mb-6">
     <div>
-      <a href="/dashboard" class="text-sm text-blue-600 hover:underline">← Рабочая область</a>
-      <h1 class="text-2xl font-semibold mt-1">Задача №{{ job.id }}</h1>
+      <a href="/dashboard" class="text-sm text-blue-600 hover:underline">{{ t("ui.rev.back") }}</a>
+      <h1 class="text-2xl font-semibold mt-1">{{ t("ui.dash.task", id=job.id) }}</h1>
       <p class="text-sm text-slate-500 mt-1">
         {% for f in job.files %}
-          <span class="mr-3">{{ {"reference": "Эталон", "commercial": "Документ", "template": "Шаблон"}[f.role] }}: {{ f.original_name }}</span>
+          <span class="mr-3">{{ t("ui.rev.role." ~ f.role) }}: {{ f.original_name }}</span>
         {% endfor %}
       </p>
     </div>
-    <span id="job-status" class="status-badge status-{{ job.status }}">{{ STATUS_LABELS.get(job.status, job.status) }}</span>
+    <span id="job-status" class="status-badge status-{{ job.status }}">{{ t("status." ~ job.status) }}</span>
   </div>
 
   <!-- Обработка -->
   <div id="state-processing" class="hidden bg-white rounded-xl border border-slate-200 p-10 text-center">
     <div class="spinner mx-auto mb-4"></div>
-    <p class="font-medium">Документы обрабатываются</p>
-    <p class="text-sm text-slate-500 mt-1">Разбор файлов и извлечение данных моделью может занять несколько минут — страница обновится автоматически.</p>
+    <p class="font-medium">{{ t("ui.rev.processing") }}</p>
+    <p class="text-sm text-slate-500 mt-1">{{ t("ui.rev.processing_hint") }}</p>
   </div>
 
   <!-- Ошибка -->
   <div id="state-failed" class="hidden bg-white rounded-xl border border-red-200 p-6">
-    <p class="font-medium text-red-700">Обработка завершилась с ошибкой</p>
+    <p class="font-medium text-red-700">{{ t("ui.rev.failed") }}</p>
     <p id="error-message" class="text-sm text-slate-700 mt-2"></p>
-    <button id="retry-btn" class="mt-4 rounded-md bg-slate-800 text-white px-4 py-2 text-sm hover:bg-slate-900">Повторить обработку</button>
+    <button id="retry-btn" class="mt-4 rounded-md bg-slate-800 text-white px-4 py-2 text-sm hover:bg-slate-900">{{ t("ui.rev.retry") }}</button>
   </div>
 
   <!-- Проверка (Diff View) -->
@@ -34,11 +34,11 @@
     <div class="bg-white rounded-xl border border-slate-200 p-4 mb-4">
       <div id="diff-summary" class="flex flex-wrap gap-2"></div>
       <div class="flex flex-wrap items-center gap-4 mt-4 text-sm">
-        <label class="flex items-center gap-2"><input type="checkbox" id="only-changes"> Показывать только изменения</label>
-        <span class="diff-legend diff-changed">изменено</span>
-        <span class="diff-legend diff-added">добавлено</span>
-        <span class="diff-legend diff-removed">удалено</span>
-        <span class="diff-legend diff-unexpected">изменён постоянный реквизит</span>
+        <label class="flex items-center gap-2"><input type="checkbox" id="only-changes"> {{ t("ui.rev.only_changes") }}</label>
+        <span class="diff-legend diff-changed">{{ t("ui.rev.legend.changed") }}</span>
+        <span class="diff-legend diff-added">{{ t("ui.rev.legend.added") }}</span>
+        <span class="diff-legend diff-removed">{{ t("ui.rev.legend.removed") }}</span>
+        <span class="diff-legend diff-unexpected">{{ t("ui.rev.legend.unexpected") }}</span>
       </div>
     </div>
 
@@ -46,19 +46,19 @@
 
     <div class="sticky bottom-0 bg-slate-50/95 backdrop-blur border-t border-slate-200 py-4 mt-6 flex flex-wrap items-center gap-4">
       <button id="approve-btn" class="rounded-md bg-green-600 text-white px-5 py-2 font-medium hover:bg-green-700 disabled:opacity-50">
-        Подтвердить данные
+        {{ t("ui.rev.approve") }}
       </button>
-      <span id="approve-hint" class="text-sm text-slate-500">Проверьте подсвеченные поля. Значения справа можно исправить перед подтверждением.</span>
+      <span id="approve-hint" class="text-sm text-slate-500">{{ t("ui.rev.approve_hint") }}</span>
     </div>
   </div>
 
   <!-- После утверждения -->
   <div id="state-approved" class="hidden bg-white rounded-xl border border-green-200 p-6 mt-4">
-    <p class="font-medium text-green-700">Данные утверждены</p>
+    <p class="font-medium text-green-700">{{ t("ui.rev.approved") }}</p>
     <div id="approve-issues" class="mt-2"></div>
     <div class="mt-4 flex flex-wrap gap-3">
-      <a id="download-btn" href="/jobs/{{ job.id }}/export" class="rounded-md bg-blue-600 text-white px-5 py-2 font-medium hover:bg-blue-700">Скачать по шаблону</a>
-      <a href="/jobs/{{ job.id }}/export.json" class="rounded-md border border-slate-300 px-5 py-2 hover:bg-slate-100">Скачать JSON</a>
+      <a id="download-btn" href="/jobs/{{ job.id }}/export" class="rounded-md bg-blue-600 text-white px-5 py-2 font-medium hover:bg-blue-700">{{ t("ui.rev.download") }}</a>
+      <a href="/jobs/{{ job.id }}/export.json" class="rounded-md border border-slate-300 px-5 py-2 hover:bg-slate-100">{{ t("ui.rev.download_json") }}</a>
     </div>
   </div>
 </div>

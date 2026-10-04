@@ -18,6 +18,7 @@ import openai
 from pydantic import ValidationError
 
 from app.config import get_settings
+from app.i18n import LLM_ISSUE_LANGUAGE, get_lang, t
 from app.schemas import LLMExtractionResult
 from app.services.parsers import ParsedDocument
 from app.services.prompts import SYSTEM_PROMPT, USER_INSTRUCTION
@@ -74,7 +75,7 @@ def build_user_content(reference: ParsedDocument, commercial: list[ParsedDocumen
     def render(doc: ParsedDocument, tag: str) -> str:
         if not doc.has_text_layer:
             if doc.pdf_bytes is None or len(doc.pdf_bytes) > PDF_MAX_BYTES:
-                raise LLMError(f"Скан «{doc.name}» слишком большой для отправки в LLM (лимит 32 МБ)")
+                raise LLMError(t("llm.scan_too_big", name=doc.name))
             blocks.append(
                 {
                     "type": "document",
@@ -93,15 +94,12 @@ def build_user_content(reference: ParsedDocument, commercial: list[ParsedDocumen
 
     parts = [render(reference, "reference_declaration"), "<commercial_documents>"]
     parts += [render(doc, "document") for doc in commercial]
-    parts += ["</commercial_documents>", "", USER_INSTRUCTION]
+    parts += ["</commercial_documents>", "", USER_INSTRUCTION, LLM_ISSUE_LANGUAGE[get_lang()]]
     text = "\n".join(parts)
 
     if len(text) > settings.llm_max_input_chars:
         # Не обрезаем молча: потеря строк инвойса = потерянные товары в декларации.
-        raise LLMError(
-            f"Документы слишком большие ({len(text):,} символов, лимит {settings.llm_max_input_chars:,}). "
-            "Разделите поставку на несколько задач или увеличьте LLM_MAX_INPUT_CHARS."
-        )
+        raise LLMError(t("llm.input_too_big", size=f"{len(text):,}", limit=f"{settings.llm_max_input_chars:,}"))
 
     # Документы-сканы идут перед текстом: так модель сначала «видит» их.
     blocks.append({"type": "text", "text": text})
@@ -118,7 +116,7 @@ def extract_declaration(
     elif provider == "openai":
         text, info = _call_openai_compatible(reference, commercial)
     else:
-        raise LLMError(f"Неизвестный LLM_PROVIDER «{provider}»: допустимо anthropic или openai")
+        raise LLMError(t("llm.unknown_provider", provider=provider))
 
     result = parse_model_output(text)
     logger.info("LLM: %s", json.dumps(info.__dict__))
@@ -139,7 +137,7 @@ def parse_model_output(text: str) -> LLMExtractionResult:
         except ValidationError as exc:
             error = exc
     logger.error("Ответ LLM не прошёл валидацию: %s\n%s", error, text[:2000])
-    raise LLMError("Модель вернула данные в неожиданном формате, повторите обработку") from error
+    raise LLMError(t("llm.bad_format")) from error
 
 
 def _strip_code_fence(text: str) -> str:
@@ -200,7 +198,7 @@ def _anthropic_request(
     client = _client()
     if client.api_key is None and client.auth_token is None and client.credentials is None:
         # Без проверки SDK упал бы с TypeError, и пользователь увидел бы «внутреннюю ошибку».
-        raise LLMError("На сервере не задан ключ Anthropic API (ANTHROPIC_API_KEY). Обратитесь к администратору.")
+        raise LLMError(t("llm.no_key", var="Anthropic API (ANTHROPIC_API_KEY)"))
 
     started = time.monotonic()
     try:
@@ -208,26 +206,26 @@ def _anthropic_request(
         with client.beta.messages.stream(**request) as stream:
             message = stream.get_final_message()
     except anthropic.AuthenticationError as exc:
-        raise LLMError("Неверный ключ Anthropic API (ANTHROPIC_API_KEY)") from exc
+        raise LLMError(t("llm.bad_key", var="Anthropic API (ANTHROPIC_API_KEY)")) from exc
     except anthropic.PermissionDeniedError as exc:
-        raise LLMError("У ключа API нет доступа к модели " + settings.llm_model) from exc
+        raise LLMError(t("llm.no_access", model=settings.llm_model)) from exc
     except anthropic.RateLimitError as exc:
-        raise LLMError("Превышен лимит запросов к Anthropic API, повторите позже") from exc
+        raise LLMError(t("llm.rate_limit", provider="Anthropic API")) from exc
     except anthropic.BadRequestError as exc:
         if strict and _is_schema_too_complex(exc):
             raise _SchemaRejected(exc.message) from exc
-        raise LLMError(f"Запрос отклонён API: {exc.message}") from exc
+        raise LLMError(t("llm.rejected", detail=exc.message)) from exc
     except anthropic.APIStatusError as exc:
-        raise LLMError(f"Ошибка Anthropic API ({exc.status_code}), повторите позже") from exc
+        raise LLMError(t("llm.api_error", provider="Anthropic", status=exc.status_code)) from exc
     except anthropic.APIConnectionError as exc:
-        raise LLMError("Нет соединения с Anthropic API") from exc
+        raise LLMError(t("llm.no_connection", provider="Anthropic")) from exc
     duration_ms = int((time.monotonic() - started) * 1000)
 
     # stop_reason проверяем до чтения ответа: при отказе или обрезке JSON может быть неполным.
     if message.stop_reason == "refusal":
-        raise LLMError("Модель отказалась обрабатывать документы. Проверьте содержимое файлов.")
+        raise LLMError(t("llm.refusal"))
     if message.stop_reason == "max_tokens":
-        raise LLMError("Ответ модели обрезан: документов слишком много. Увеличьте LLM_MAX_TOKENS.")
+        raise LLMError(t("llm.truncated", var="LLM_MAX_TOKENS"))
 
     text = "".join(block.text for block in message.content if block.type == "text")
     info = LLMCallInfo(
@@ -244,7 +242,7 @@ def _anthropic_request(
 def _openai_client() -> openai.OpenAI:
     settings = get_settings()
     if not settings.openai_api_key:
-        raise LLMError("На сервере не задан ключ OPENAI_API_KEY. Обратитесь к администратору.")
+        raise LLMError(t("llm.no_key", var="OPENAI_API_KEY"))
     return openai.OpenAI(api_key=settings.openai_api_key, base_url=settings.openai_base_url or None)
 
 
@@ -259,11 +257,10 @@ def _call_openai_compatible(
     """
     settings = get_settings()
     if not settings.openai_model:
-        raise LLMError("Не задана модель OPENAI_MODEL. Обратитесь к администратору.")
+        raise LLMError(t("llm.no_model"))
     scans = [d.name for d in (reference, *commercial) if not d.has_text_layer]
     if scans:
-        raise LLMError(f"Файл «{scans[0]}» — скан без текста. Сканы обрабатываются только через Claude "
-                       "(LLM_PROVIDER=anthropic); либо загрузите PDF с текстовым слоем или Excel.")
+        raise LLMError(t("llm.scan_unsupported", name=scans[0]))
     user_text = build_user_content(reference, commercial)[-1]["text"]
     client = _openai_client()
 
@@ -298,29 +295,28 @@ def _call_openai_compatible(
             logger.warning("Сервис отклонил режим JSON Schema, повторяем в JSON-режиме", exc_info=True)
             response = client.chat.completions.create(**json_mode_request)
     except openai.AuthenticationError as exc:
-        raise LLMError("Неверный ключ OPENAI_API_KEY") from exc
+        raise LLMError(t("llm.bad_key", var="OPENAI_API_KEY")) from exc
     except openai.PermissionDeniedError as exc:
-        raise LLMError(f"У ключа нет доступа к модели {settings.openai_model}") from exc
+        raise LLMError(t("llm.no_access", model=settings.openai_model)) from exc
     except openai.NotFoundError as exc:
-        raise LLMError(f"Модель «{settings.openai_model}» не найдена: "
-                       "проверьте OPENAI_MODEL и OPENAI_BASE_URL") from exc
+        raise LLMError(t("llm.model_not_found", model=settings.openai_model)) from exc
     except openai.RateLimitError as exc:
-        raise LLMError("Превышен лимит запросов или закончились деньги на балансе провайдера") from exc
+        raise LLMError(t("llm.quota")) from exc
     except openai.BadRequestError as exc:
-        raise LLMError(f"Запрос отклонён API: {exc.message}") from exc
+        raise LLMError(t("llm.rejected", detail=exc.message)) from exc
     except openai.APIStatusError as exc:
-        raise LLMError(f"Ошибка API провайдера ({exc.status_code}), повторите позже") from exc
+        raise LLMError(t("llm.api_error", provider="OpenAI-compatible", status=exc.status_code)) from exc
     except openai.APIConnectionError as exc:
-        raise LLMError("Нет соединения с API провайдера (проверьте OPENAI_BASE_URL)") from exc
+        raise LLMError(t("llm.no_connection", provider="OpenAI-compatible (OPENAI_BASE_URL)")) from exc
     duration_ms = int((time.monotonic() - started) * 1000)
 
     if not response.choices:
-        raise LLMError("Провайдер вернул пустой ответ, повторите обработку")
+        raise LLMError(t("llm.empty"))
     choice = response.choices[0]
     if getattr(choice.message, "refusal", None) or choice.finish_reason == "content_filter":
-        raise LLMError("Модель отказалась обрабатывать документы. Проверьте содержимое файлов.")
+        raise LLMError(t("llm.refusal"))
     if choice.finish_reason == "length":
-        raise LLMError("Ответ модели обрезан: увеличьте OPENAI_MAX_TOKENS или разделите поставку.")
+        raise LLMError(t("llm.truncated", var="OPENAI_MAX_TOKENS"))
 
     usage = response.usage
     info = LLMCallInfo(

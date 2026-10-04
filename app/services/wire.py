@@ -22,6 +22,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
+from app.i18n import t
 from app.schemas import (
     DeclarationData,
     DeclarationHeader,
@@ -195,7 +196,7 @@ class _Converter:
         result, ok = parse_number(value)
         if not ok:
             self.issues.append(LLMIssue(severity="warning", item_no=item_no, field=field,
-                                        message=f"Не удалось распознать число «{value}» ({where})"))
+                                        message=t("wire.bad_number", value=value, where=where)))
         return result
 
     def integer(self, value: str, where: str, item_no: int | None, field: str) -> int | None:
@@ -204,7 +205,7 @@ class _Converter:
             return None
         if not result.is_integer():
             self.issues.append(LLMIssue(severity="warning", item_no=item_no, field=field,
-                                        message=f"Ожидалось целое число, получено «{value}» ({where})"))
+                                        message=t("wire.not_integer", value=value, where=where)))
             return None
         return int(result)
 
@@ -240,7 +241,7 @@ class _Converter:
     def item(self, it: WireReferenceItem, *, reference: bool) -> GoodsItem:
         # Замечания к позициям эталона не привязываем к номеру: item_no в замечаниях — номер новой позиции.
         issue_no = None if reference else it.item_no
-        where = f"позиция эталона №{it.item_no}" if reference else f"позиция №{it.item_no}"
+        where = t("wire.where_ref", no=it.item_no) if reference else t("wire.where_item", no=it.item_no)
 
         def num(field: str) -> float | None:
             field_ref = f"reference.items.{it.item_no}.{field}" if reference else field

@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.i18n import t
 from app.models import GenerationLog
 
 LLM_REQUEST_EVENT = "llm_request"  # пишется в generation_logs перед каждым вызовом модели
@@ -46,7 +47,7 @@ class LoginThrottle:
             attempts = self._prune(email.strip().lower(), now, window)
             if len(attempts) >= settings.login_max_failures:
                 wait = max(1, int((window - (now - attempts[0])) // 60) + 1)
-                raise LimitExceeded(f"Слишком много неудачных попыток входа. Повторите через {wait} мин.")
+                raise LimitExceeded(t("limit.login", wait=wait))
 
     def record_failure(self, email: str) -> None:
         with self._lock:
@@ -69,7 +70,7 @@ def check_llm_quota(db: Session, user_id: int) -> None:
     )
     per_user = settings.max_llm_requests_per_user_per_day
     if per_user > 0 and db.scalar(base.where(GenerationLog.user_id == user_id)) >= per_user:
-        raise LimitExceeded(f"Достигнут лимит: {per_user} обработок за 24 часа для вашей учётной записи.")
+        raise LimitExceeded(t("limit.user_quota", n=per_user))
     total = settings.max_llm_requests_per_day
     if total > 0 and db.scalar(base) >= total:
-        raise LimitExceeded("Достигнут общий суточный лимит обработок на сервере. Повторите позже.")
+        raise LimitExceeded(t("limit.total_quota"))

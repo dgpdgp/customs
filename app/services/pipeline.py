@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import SessionLocal
+from app.i18n import reset_lang, set_lang, t
 from app.limits import LLM_REQUEST_EVENT
 from app.models import DeclarationJob, GenerationLog, JobStatus
 from app.services import llm, validation
@@ -35,6 +36,8 @@ def process_job(job_id: int) -> None:
     if job is None:
         db.close()
         return
+    # Сообщения об ошибках и замечания — на языке, выбранном при загрузке
+    lang_token = set_lang(job.options.get("lang"))
     try:
         started = time.monotonic()
         reference_doc = _parse(job, "reference")[0]
@@ -68,8 +71,9 @@ def process_job(job_id: int) -> None:
     except Exception as exc:  # непредвиденная ошибка — не оставляем задачу «висеть» в processing
         logger.exception("Ошибка обработки задачи %s", job_id)
         job.status = JobStatus.FAILED
-        job.error_message = "Внутренняя ошибка обработки. Подробности в логе сервера."
+        job.error_message = t("pipe.internal")
         _log(db, job, "error", status="error", message=repr(exc)[:2000])
     finally:
         db.commit()
         db.close()
+        reset_lang(lang_token)
