@@ -111,10 +111,15 @@ def extract_declaration(
         request["betas"] = [FALLBACK_BETA]
         request["fallbacks"] = "default"
 
+    client = _client()
+    if client.api_key is None and client.auth_token is None and client.credentials is None:
+        # Без проверки SDK упал бы с TypeError, и пользователь увидел бы «внутреннюю ошибку».
+        raise LLMError("На сервере не задан ключ Anthropic API (ANTHROPIC_API_KEY). Обратитесь к администратору.")
+
     started = time.monotonic()
     try:
         # Стриминг обязателен при большом max_tokens: иначе HTTP-запрос упрётся в таймаут.
-        with _client().beta.messages.stream(**request) as stream:
+        with client.beta.messages.stream(**request) as stream:
             message = stream.get_final_message()
     except anthropic.AuthenticationError as exc:
         raise LLMError("Неверный ключ Anthropic API (ANTHROPIC_API_KEY)") from exc

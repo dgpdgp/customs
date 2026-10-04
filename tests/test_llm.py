@@ -74,12 +74,13 @@ class FakeStream:
         return self.message
 
 
-def fake_client(message, captured: dict):
+def fake_client(message, captured: dict, api_key="test-key"):
     def stream(**kwargs):
         captured.update(kwargs)
         return FakeStream(message)
 
-    return SimpleNamespace(beta=SimpleNamespace(messages=SimpleNamespace(stream=stream)))
+    return SimpleNamespace(api_key=api_key, auth_token=None, credentials=None,
+                           beta=SimpleNamespace(messages=SimpleNamespace(stream=stream)))
 
 
 def make_message(stop_reason="end_turn", text=None):
@@ -130,4 +131,26 @@ def test_fallbacks_can_be_disabled(monkeypatch):
 def test_bad_responses_raise_readable_errors(monkeypatch, stop_reason, text, error):
     monkeypatch.setattr(llm, "_client", lambda: fake_client(make_message(stop_reason, text), {}))
     with pytest.raises(llm.LLMError, match=error):
+        llm.extract_declaration(*DOCS)
+
+
+def test_missing_api_key_gives_readable_error(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(llm, "_client", lambda: fake_client(make_message(), captured, api_key=None))
+    with pytest.raises(llm.LLMError, match="не задан ключ Anthropic API"):
+        llm.extract_declaration(*DOCS)
+    assert not captured  # запрос не отправлялся
+
+
+def test_real_sdk_client_without_credentials(monkeypatch):
+    """Настоящий клиент SDK без ключа: проверка срабатывает до сетевого запроса."""
+    import anthropic
+
+    for var in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"):
+        monkeypatch.delenv(var, raising=False)
+    client = anthropic.Anthropic()
+    if client.credentials is not None:
+        pytest.skip("на машине настроен профиль `ant auth login`")
+    monkeypatch.setattr(llm, "_client", lambda: client)
+    with pytest.raises(llm.LLMError, match="не задан ключ"):
         llm.extract_declaration(*DOCS)
