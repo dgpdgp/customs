@@ -200,7 +200,7 @@ def bad_request(message: str):
 
 
 def test_falls_back_to_prompt_json_when_schema_rejected(monkeypatch):
-    monkeypatch.setattr(llm, "_strict_schema_rejected", False)
+    monkeypatch.setattr(llm, "_rejected_schemas", set())
     calls = []
     results = [bad_request("The compiled grammar is too large. Simplify your tool schemas"),
                make_message(text="Вот результат:\n" + fake_extraction_result().model_dump_json())]
@@ -226,11 +226,11 @@ def test_falls_back_to_prompt_json_when_schema_rejected(monkeypatch):
     results.append(make_message())
     llm.extract_declaration(*DOCS)
     assert "format" not in calls[2]["output_config"]
-    monkeypatch.setattr(llm, "_strict_schema_rejected", False)
+    monkeypatch.setattr(llm, "_rejected_schemas", set())
 
 
 def test_other_bad_requests_are_not_retried(monkeypatch):
-    monkeypatch.setattr(llm, "_strict_schema_rejected", False)
+    monkeypatch.setattr(llm, "_rejected_schemas", set())
 
     def stream(**kwargs):
         raise bad_request("prompt is too long: 1200000 tokens > 1000000 maximum")
@@ -240,7 +240,7 @@ def test_other_bad_requests_are_not_retried(monkeypatch):
     monkeypatch.setattr(llm, "_client", lambda: client)
     with pytest.raises(llm.LLMError, match="prompt is too long"):
         llm.extract_declaration(*DOCS)
-    assert llm._strict_schema_rejected is False
+    assert not llm._rejected_schemas
 
 
 def test_wire_format_strings_are_converted():

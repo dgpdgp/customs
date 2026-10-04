@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.i18n import LANGUAGES, t
 from app.models import AdminAuditLog, AppSetting, User
+from app.services.schema_variants import VARIANT_KEYS
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,7 @@ EDITABLE: tuple[SettingDef, ...] = (
     SettingDef("llm_model", "text", "llm"),
     SettingDef("llm_effort", "choice", "llm", ("low", "medium", "high", "xhigh", "max")),
     SettingDef("llm_fallbacks", "bool", "llm"),
+    SettingDef("llm_schema_variant", "choice", "llm", VARIANT_KEYS),
     SettingDef("openai_api_key", "secret", "llm"),
     SettingDef("openai_base_url", "text", "llm"),
     SettingDef("openai_model", "text", "llm"),

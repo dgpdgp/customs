@@ -412,6 +412,18 @@ _RAW: dict[str, tuple[str, str, str]] = {
                   "გადაჭარბებულია ლიმიტი ან პროვაიდერის ბალანსი ამოიწურა"),
     "llm.rejected": ("Запрос отклонён API: {detail}", "Request rejected by the API: {detail}",
                      "API-მ მოთხოვნა უარყო: {detail}"),
+    "llm.no_credit": (
+        "На счёте Anthropic закончились деньги. Пополните баланс в консоли Anthropic (Billing) и повторите обработку",
+        "The Anthropic account is out of credit. Top up the balance in the Anthropic Console (Billing) and retry",
+        "Anthropic-ის ანგარიშზე თანხა ამოიწურა. შეავსეთ ბალანსი Anthropic-ის კონსოლში (Billing) და გაიმეორეთ"),
+    "llm.bad_row": (
+        "Ответ ИИ: в строке {n} таблицы {where} {got} значений вместо {expected} — повторите обработку",
+        "AI response: row {n} of table {where} has {got} values instead of {expected} — please retry",
+        "AI-ის პასუხი: ცხრილის {where} {n}-ე სტრიქონში {got} მნიშვნელობაა {expected}-ის ნაცვლად — გაიმეორეთ"),
+    "llm.unknown_variant": (
+        "Неизвестный вариант схемы ответа ИИ «{variant}» (допустимо: {choices})",
+        "Unknown AI response schema variant \"{variant}\" (allowed: {choices})",
+        "AI-ის პასუხის სქემის უცნობი ვარიანტი „{variant}“ (დასაშვებია: {choices})"),
     "llm.api_error": ("Ошибка API {provider} ({status}), повторите позже",
                       "{provider} API error ({status}), try again later",
                       "{provider} API-ის შეცდომა ({status}), სცადეთ მოგვიანებით"),
@@ -656,6 +668,9 @@ _RAW: dict[str, tuple[str, str, str]] = {
     "admin.key.llm_fallbacks": ("Запасная модель, если Claude откажется отвечать",
                                 "Fallback model if Claude refuses to answer",
                                 "სარეზერვო მოდელი, თუ Claude უარს იტყვის პასუხზე"),
+    "admin.key.llm_schema_variant": ("Вариант схемы ответа ИИ (full — по умолчанию)",
+                                     "AI response schema variant (full is the default)",
+                                     "AI-ის პასუხის სქემის ვარიანტი (full — ნაგულისხმევი)"),
     "admin.key.openai_api_key": ("Ключ OpenAI-совместимого сервиса", "OpenAI-compatible API key",
                                  "OpenAI-თავსებადი სერვისის გასაღები"),
     "admin.key.openai_base_url": ("Адрес API OpenAI-совместимого сервиса (пусто — OpenAI)",

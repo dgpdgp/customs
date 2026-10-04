@@ -82,6 +82,9 @@ class Settings(BaseSettings):
     # Серверный фолбэк на другую модель, если основная откажется отвечать
     # (stop_reason = "refusal"). Работает только с прямым Claude API.
     llm_fallbacks: bool = True
+    # Вариант схемы ответа ИИ: full (по умолчанию) | a | b | c | d | e — см. app/services/schema_variants.py.
+    # Нужен, чтобы подобрать схему, которую примет строгий режим API (scripts/check_llm_schema.py --variant all).
+    llm_schema_variant: str = "full"
     # Защита от случайной загрузки гигантских файлов: суммарный объём текста,
     # отправляемого в LLM. Текст никогда не обрезается молча — при превышении
     # пользователь получает понятную ошибку.

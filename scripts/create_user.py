@@ -28,9 +28,18 @@ from app.models import User, UserSession  # noqa: E402
 from app.security import create_user, hash_password, validate_password_strength  # noqa: E402
 
 
+def _read_password(prompt: str) -> str:
+    if sys.stdin.isatty():
+        return getpass.getpass(prompt)
+    # Пароль подан через стандартный ввод (скрипт, тест). getpass на Windows читает
+    # только консоль и в таком случае зависает, поэтому читаем строку сами.
+    print(prompt, end="", file=sys.stderr, flush=True)
+    return sys.stdin.readline().rstrip("\r\n")
+
+
 def ask_password() -> str:
-    password = getpass.getpass("Пароль (минимум 8 символов): ")
-    if password != getpass.getpass("Повторите пароль: "):
+    password = _read_password("Пароль (минимум 8 символов): ")
+    if password != _read_password("Повторите пароль: "):
         sys.exit("Пароли не совпадают")
     try:
         validate_password_strength(password)

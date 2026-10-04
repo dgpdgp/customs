@@ -3,6 +3,9 @@
 Основной провайдер — Claude (Anthropic). Дополнительно поддерживаются OpenAI и сервисы
 с OpenAI-совместимым API (LLM_PROVIDER=openai). Промпт, схема ответа и проверка
 результата одинаковы для всех провайдеров.
+
+Схема ответа выбирается настройкой LLM_SCHEMA_VARIANT (app/services/schema_variants.py):
+вариант может состоять из одного или двух вызовов модели, результат всегда сводится к WireResult.
 """
 
 import base64
@@ -11,17 +14,20 @@ import logging
 import time
 from dataclasses import dataclass
 from functools import lru_cache
+from typing import TypeVar
 from xml.sax.saxutils import quoteattr
 
 import anthropic
 import openai
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from app.config import get_settings
 from app.i18n import LLM_ISSUE_LANGUAGE, get_lang, t
 from app.schemas import LLMExtractionResult
+from app.services import schema_variants
 from app.services.parsers import ParsedDocument
 from app.services.prompts import SYSTEM_PROMPT, USER_INSTRUCTION
+from app.services.schema_variants import Part, Variant
 from app.services.wire import WireResult, wire_to_result
 
 logger = logging.getLogger(__name__)
@@ -29,16 +35,27 @@ logger = logging.getLogger(__name__)
 # JSON Schema ответа строится из Pydantic-модели. transform_schema приводит её
 # к требованиям структурированного вывода API (additionalProperties: false и т. д.).
 # Проводной формат без объединений типов — см. app/services/wire.py (лимиты строгой схемы).
-OUTPUT_SCHEMA = anthropic.transform_schema(WireResult)
-SCHEMA_INSTRUCTION = (
-    "\n\nВерни ответ строго одним JSON-объектом по этой JSON Schema, без пояснений до и после. "
-    "Неизвестные значения — пустая строка, номера позиций без соответствия — 0.\n"
-    + json.dumps(OUTPUT_SCHEMA, ensure_ascii=False)
-)
+OUTPUT_SCHEMA = schema_variants.FULL_SCHEMA
+
+
+def schema_instruction(schema: dict) -> str:
+    """Схема в тексте запроса — для запасного режима без строгого структурированного вывода."""
+    return (
+        "\n\nВерни ответ строго одним JSON-объектом по этой JSON Schema, без пояснений до и после. "
+        "Неизвестные значения — пустая строка, номера позиций без соответствия — 0.\n"
+        + json.dumps(schema, ensure_ascii=False)
+    )
+
+
+SCHEMA_INSTRUCTION = schema_instruction(OUTPUT_SCHEMA)
 # Признаки ответа API «схема слишком сложная для строгого режима»
 _SCHEMA_TOO_COMPLEX_MARKERS = ("grammar", "too complex", "too many optional", "union types", "schema is too")
-# Если API однажды отклонил строгую схему, до перезапуска не тратим на неё время.
-_strict_schema_rejected = False
+# Признак ответа API «на счёте закончились деньги» (400 invalid_request_error)
+_NO_CREDIT_MARKERS = ("credit balance",)
+# Схемы (вариант:вызов), которые API однажды отклонил: до перезапуска не тратим на них время.
+_rejected_schemas: set[str] = set()
+
+ModelT = TypeVar("ModelT", bound=BaseModel)
 
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 PDF_MAX_BYTES = 32 * 1024 * 1024  # лимит размера запроса с PDF в Claude API
@@ -63,11 +80,19 @@ def _client() -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=key) if key else anthropic.Anthropic()
 
 
-def build_user_content(reference: ParsedDocument, commercial: list[ParsedDocument]) -> list[dict]:
+def build_user_content(
+    reference: ParsedDocument,
+    commercial: list[ParsedDocument],
+    *,
+    part: Part | None = None,
+    reference_extracted: str | None = None,
+) -> list[dict]:
     """Собирает сообщение пользователя: документы в XML-тегах + короткая инструкция.
 
     Сканы (PDF без текстового слоя) передаются как document-блоки — Claude читает их
     как изображения, — а в текстовой части на них остаётся ссылка по имени.
+    part — вызов варианта схемы (какие документы передавать и что добавить к инструкции);
+    reference_extracted — эталон, извлечённый предыдущим вызовом (вариант из двух вызовов).
     """
     settings = get_settings()
     blocks: list[dict] = []
@@ -92,9 +117,18 @@ def build_user_content(reference: ParsedDocument, commercial: list[ParsedDocumen
             body = doc.text
         return f"<{tag} name={quoteattr(doc.name)} format={quoteattr(doc.kind)}>\n{body}\n</{tag}>"
 
-    parts = [render(reference, "reference_declaration"), "<commercial_documents>"]
-    parts += [render(doc, "document") for doc in commercial]
-    parts += ["</commercial_documents>", "", USER_INSTRUCTION, LLM_ISSUE_LANGUAGE[get_lang()]]
+    parts = []
+    if part is None or part.with_reference:
+        parts.append(render(reference, "reference_declaration"))
+    if reference_extracted is not None:
+        parts.append(f"<reference_extracted>\n{reference_extracted}\n</reference_extracted>")
+    if part is None or part.with_commercial:
+        parts += ["<commercial_documents>", *(render(doc, "document") for doc in commercial),
+                  "</commercial_documents>"]
+    parts += ["", USER_INSTRUCTION]
+    if part is not None and part.instruction:
+        parts.append(part.instruction)
+    parts.append(LLM_ISSUE_LANGUAGE[get_lang()])
     text = "\n".join(parts)
 
     if len(text) > settings.llm_max_input_chars:
@@ -109,23 +143,51 @@ def build_user_content(reference: ParsedDocument, commercial: list[ParsedDocumen
 def extract_declaration(
     reference: ParsedDocument, commercial: list[ParsedDocument]
 ) -> tuple[LLMExtractionResult, LLMCallInfo]:
-    """Один вызов модели: эталон + новые документы -> структурированный JSON."""
-    provider = get_settings().llm_provider
-    if provider == "anthropic":
-        text, info = _call_anthropic(reference, commercial)
-    elif provider == "openai":
-        text, info = _call_openai_compatible(reference, commercial)
-    else:
+    """Эталон + новые документы -> структурированный JSON (один или два вызова — по варианту схемы)."""
+    settings = get_settings()
+    provider = settings.llm_provider
+    if provider not in ("anthropic", "openai"):
         raise LLMError(t("llm.unknown_provider", provider=provider))
+    try:
+        variant = schema_variants.get(settings.llm_schema_variant)
+    except schema_variants.VariantError as exc:
+        raise LLMError(str(exc)) from exc
 
-    result = parse_model_output(text)
-    logger.info("LLM: %s", json.dumps(info.__dict__))
+    parsed: dict[str, BaseModel] = {}
+    infos: list[LLMCallInfo] = []
+    context: str | None = None
+    for part in variant.parts:
+        content = build_user_content(reference, commercial, part=part, reference_extracted=context)
+        if provider == "anthropic":
+            text, info = _call_anthropic(content, variant, part)
+        else:
+            text, info = _call_openai_compatible(content, part, [reference, *commercial])
+        infos.append(info)
+        parsed[part.name] = _parse_json(text, part.model)
+        if part.context is not None:
+            context = part.context(parsed[part.name])
+
+    try:
+        result = wire_to_result(variant.combine(parsed))
+    except schema_variants.VariantError as exc:
+        raise LLMError(str(exc)) from exc
+    info = LLMCallInfo(
+        model=infos[-1].model,
+        input_tokens=sum(i.input_tokens for i in infos),
+        output_tokens=sum(i.output_tokens for i in infos),
+        duration_ms=sum(i.duration_ms for i in infos),
+    )
+    logger.info("LLM (%s, вызовов: %d): %s", variant.key, len(infos), json.dumps(info.__dict__))
     return result, info
 
 
 def parse_model_output(text: str) -> LLMExtractionResult:
-    """JSON модели -> внутренние модели. Терпим к обёртке ```json и тексту вокруг JSON
-    (в запасном режиме без строгой схемы)."""
+    """JSON модели (вариант full) -> внутренние модели."""
+    return wire_to_result(_parse_json(text, WireResult))
+
+
+def _parse_json(text: str, model: type[ModelT]) -> ModelT:
+    """Терпим к обёртке ```json и тексту вокруг JSON (в запасном режиме без строгой схемы)."""
     candidates = [_strip_code_fence(text)]
     start, end = text.find("{"), text.rfind("}")
     if start != -1 and end > start:
@@ -133,7 +195,7 @@ def parse_model_output(text: str) -> LLMExtractionResult:
     error: ValidationError | None = None
     for candidate in candidates:
         try:
-            return wire_to_result(WireResult.model_validate_json(candidate))
+            return model.model_validate_json(candidate)
         except ValidationError as exc:
             error = exc
     logger.error("Ответ LLM не прошёл валидацию: %s\n%s", error, text[:2000])
@@ -156,33 +218,35 @@ def _is_schema_too_complex(exc: anthropic.BadRequestError) -> bool:
     return any(marker in message for marker in _SCHEMA_TOO_COMPLEX_MARKERS)
 
 
-def _call_anthropic(reference: ParsedDocument, commercial: list[ParsedDocument]) -> tuple[str, LLMCallInfo]:
+def _is_no_credit(exc: anthropic.BadRequestError) -> bool:
+    message = str(exc.message).lower()
+    return any(marker in message for marker in _NO_CREDIT_MARKERS)
+
+
+def _call_anthropic(content: list[dict], variant: Variant, part: Part) -> tuple[str, LLMCallInfo]:
     """Сначала строгий структурированный вывод; если API отклоняет схему как слишком
     сложную, повторяем без неё (схема в тексте запроса, ответ проверяет Pydantic)."""
-    global _strict_schema_rejected
-    if not _strict_schema_rejected:
+    schema_key = f"{variant.key}:{part.name}"
+    if schema_key not in _rejected_schemas:
         try:
-            return _anthropic_request(reference, commercial, strict=True)
+            return _anthropic_request(content, part, strict=True)
         except _SchemaRejected as exc:
-            _strict_schema_rejected = True
-            logger.warning("API отклонил строгую схему (%s) — переходим на JSON по инструкции", exc)
-    return _anthropic_request(reference, commercial, strict=False)
+            _rejected_schemas.add(schema_key)
+            logger.warning("API отклонил строгую схему %s (%s) — переходим на JSON по инструкции", schema_key, exc)
+    return _anthropic_request(content, part, strict=False)
 
 
 class _SchemaRejected(Exception):
     pass
 
 
-def _anthropic_request(
-    reference: ParsedDocument, commercial: list[ParsedDocument], *, strict: bool
-) -> tuple[str, LLMCallInfo]:
+def _anthropic_request(content: list[dict], part: Part, *, strict: bool) -> tuple[str, LLMCallInfo]:
     settings = get_settings()
-    content = build_user_content(reference, commercial)
     output_config: dict = {"effort": settings.llm_effort}
     if strict:
-        output_config["format"] = {"type": "json_schema", "schema": OUTPUT_SCHEMA}
+        output_config["format"] = {"type": "json_schema", "schema": part.schema}
     else:
-        content[-1] = {"type": "text", "text": content[-1]["text"] + SCHEMA_INSTRUCTION}
+        content = [*content[:-1], {"type": "text", "text": content[-1]["text"] + schema_instruction(part.schema)}]
     request: dict = {
         "model": settings.llm_model,
         "max_tokens": settings.llm_max_tokens,
@@ -212,6 +276,8 @@ def _anthropic_request(
     except anthropic.RateLimitError as exc:
         raise LLMError(t("llm.rate_limit", provider="Anthropic API")) from exc
     except anthropic.BadRequestError as exc:
+        if _is_no_credit(exc):
+            raise LLMError(t("llm.no_credit")) from exc
         if strict and _is_schema_too_complex(exc):
             raise _SchemaRejected(exc.message) from exc
         raise LLMError(t("llm.rejected", detail=exc.message)) from exc
@@ -247,7 +313,7 @@ def _openai_client() -> openai.OpenAI:
 
 
 def _call_openai_compatible(
-    reference: ParsedDocument, commercial: list[ParsedDocument]
+    content: list[dict], part: Part, documents: list[ParsedDocument]
 ) -> tuple[str, LLMCallInfo]:
     """Chat Completions API: OpenAI и сервисы с таким же интерфейсом (адрес — OPENAI_BASE_URL).
 
@@ -258,10 +324,10 @@ def _call_openai_compatible(
     settings = get_settings()
     if not settings.openai_model:
         raise LLMError(t("llm.no_model"))
-    scans = [d.name for d in (reference, *commercial) if not d.has_text_layer]
+    scans = [d.name for d in documents if not d.has_text_layer]
     if scans:
         raise LLMError(t("llm.scan_unsupported", name=scans[0]))
-    user_text = build_user_content(reference, commercial)[-1]["text"]
+    user_text = content[-1]["text"]
     client = _openai_client()
 
     base: dict = {"model": settings.openai_model}
@@ -275,14 +341,14 @@ def _call_openai_compatible(
         "messages": [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": user_text}],
         "response_format": {
             "type": "json_schema",
-            "json_schema": {"name": "declaration_extraction", "schema": OUTPUT_SCHEMA, "strict": True},
+            "json_schema": {"name": "declaration_extraction", "schema": part.schema, "strict": True},
         },
     }
     json_mode_request = {
         **base,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_text + SCHEMA_INSTRUCTION},
+            {"role": "user", "content": user_text + schema_instruction(part.schema)},
         ],
         "response_format": {"type": "json_object"},
     }

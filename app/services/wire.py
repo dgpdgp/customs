@@ -79,6 +79,8 @@ Number = Annotated[str, BeforeValidator(_as_text), Field(description="Число
                                                                      "пустая строка, если значения нет")]
 Count = Annotated[int, BeforeValidator(_as_int)]
 TextList = Annotated[list[Text], BeforeValidator(_as_list)]
+HsBasis = Annotated[Literal["document", "reference_match", "not_found"],
+                    BeforeValidator(_choice(HS_BASIS, "not_found"))]
 
 
 class _Wire(BaseModel):
@@ -137,10 +139,8 @@ class WireReferenceItem(_Wire):
 
 class WireNewItem(WireReferenceItem):
     item_no: Count = Field(description="Порядковый номер новой позиции, начиная с 1")
-    hs_code_basis: Annotated[
-        Literal["document", "reference_match", "not_found"],
-        BeforeValidator(_choice(HS_BASIS, "not_found")),
-    ] = Field(description="Откуда код: из нового документа / из совпадающей позиции эталона / не найден")
+    hs_code_basis: HsBasis = Field(description="Откуда код: из нового документа / из совпадающей позиции эталона / "
+                                               "не найден")
     reference_item_no: Count = Field(description="Номер соответствующей позиции эталона, 0 — нет соответствия")
     source_document: Text = Field(description="Имя документа-источника (атрибут name)")
     source_quote: Text = Field(description="Дословный фрагмент строки документа, до 200 символов")
